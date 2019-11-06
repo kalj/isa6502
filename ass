@@ -1,0 +1,61 @@
+#!/usr/bin/python3
+#
+#
+
+import sys
+import isa6502
+
+if len(sys.argv) < 1:
+    print("Input filename required")
+    sys.exit(1)
+
+inputfilename = sys.argv[1]
+
+outputfilename="a.out"
+
+source = open(inputfilename,"r").readlines()
+
+ops = []
+linum = -1
+for line in source:
+    linum += 1
+    i = line.find(";")
+    if i>=0:
+        l = line[:i]
+    else:
+        l = line
+
+    instr = l.strip()
+    if len(instr) == 0:
+        continue
+
+    mnemonic = instr[0:3]
+    argument=instr[3:].strip()
+    addrmode,operand = isa6502.parse_argument(argument)
+    try:
+        opcode = isa6502.get_opcode(mnemonic,addrmode)
+    except isa6502.SyntaxError as e:
+        print("SyntaxError on line {}: {}".format(linum,str(e)))
+        print(line)
+        sys.exit(1)
+    instr_bytes = isa6502.encode(opcode,addrmode,operand)
+    ops.extend(instr_bytes)
+
+prog = bytes(ops)
+
+# prog_size = len(prog)
+
+# bootloader_size = 256
+# start_address = 0xff00-prog_size
+# start_address_lsb = 0xff & start_address
+# start_address_msb = 0xff & (start_address >> 8)
+
+
+# ## bootloader layout
+# #            00    01    02   ...    fa    fb        fc     fd     fe   ff
+# # ff00      STP   STP   STP         STP   STP    sa_lsb sa_msb      0    0
+# bootloader = bytes(((bootloader_size-4)*[isa6502.instr_to_opcode("STP")])+[start_address_lsb, start_address_msb, 0x00, 0x00])
+
+# fullprog=prog+bootloader
+
+open(outputfilename,"wb").write(prog)

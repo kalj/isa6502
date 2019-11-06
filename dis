@@ -1,0 +1,29 @@
+#!/usr/bin/python3
+#
+#
+
+import sys
+import isa6502
+
+if len(sys.argv) < 1:
+    print("Input filename required")
+    sys.exit(1)
+
+inputfilename = sys.argv[1]
+
+prog = open(inputfilename,"rb").read()
+
+source = []
+bytesize = len(prog)
+bytenum=0
+while bytenum < bytesize:
+    opcode = prog[bytenum]
+    mnemonic,addrmode = isa6502.opcode_to_instr(opcode)
+    operand_size = isa6502.operand_size(addrmode)
+    operand_bytes = prog[bytenum+1 : bytenum+1+operand_size]
+    instr = isa6502.decode(mnemonic,addrmode,operand_bytes)
+    source.append("{:04x}   {}".format(bytenum,instr))
+    bytenum += 1+operand_size
+
+for l in source:
+    print(l)
