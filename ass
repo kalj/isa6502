@@ -3,7 +3,110 @@
 #
 
 import sys
+import re
 import isa6502
+
+# class Token:
+#     pass
+
+
+
+# ===================================================================
+# preprocess
+# ===================================================================
+def preprocess(src_in):
+    src_out = []
+    for i,line in enumerate(src_in):
+        idx = line.find(";")
+        if idx>=0:
+            l = line[:idx]
+        else:
+            l = line
+
+        l = l.strip()
+        if len(l) == 0:
+            continue
+
+        src_out.append((l,i))
+    return src_out
+
+# ===================================================================
+# Harvest labels
+# ===================================================================
+def harvest_labels(src_in):
+    labels={}
+    current_labels = []
+    src_out = []
+    for line,linum in src_in:
+        m = re.match("^(\w+):(.*)$",line)
+        if m:
+            current_labels.append(m.group(1))
+            line = m.group(2).strip()
+
+        if line:
+            current_idx = len(src_out)
+            if current_labels:
+                for l in current_labels:
+                    labels[l] = current_idx
+                current_labels = []
+
+            src_out.append((line,linum))
+        # else line was empty, i.e. there was nothin after the label
+
+    if current_labels:
+         SyntaxError("Label at end of file")
+         raise e
+
+    return src_out,labels
+
+def parse_instructions(source):
+    instructions = []
+    for line,linum in source:
+
+        try:
+            mnemonic = line[0:3]
+            argument=line[3:].strip()
+            addrmode,operand = isa6502.parse_argument(argument)
+            opcode = isa6502.get_opcode(mnemonic,addrmode)
+            instructions.append(isa6502.Instruction(opcode,operand))
+        except isa6502.SyntaxError as e:
+            # e.set_linum(linum)
+            raise e
+
+    return instructions
+
+def resolve_labels(instructions_in,labels):
+
+    byte_offset = 0
+    instr_offsets = []
+
+    for instr in instructions_in:
+        instr_offsets.append(byte_offset)
+        byte_offset += instr.size()
+
+    label_offsets = {l:instr_offsets[idx] for l,idx in labels.items()}
+
+    for i,instr in enumerate(instructions_in):
+        if instr.get_addrmode() == "r":
+            label = instr._operand
+            branch_offset = label_offsets[label] - (instr_offsets[i]+instr.size())
+
+            if branch_offset > 127 or branch_offset < -128:
+                raise SyntaxError("Out of range branch (branches are limited to -128 to +127)")
+
+            branch_offset = (branch_offset+256) % 256 # convert to unsigned
+
+            instr._operand = branch_offset
+
+    return instructions_in
+
+def encode(instructions):
+    ops = []
+    for instr in instructions:
+        ops.extend(instr.encode())
+
+    return bytes(ops)
+
 
 if len(sys.argv) < 1:
     print("Input filename required")
@@ -13,49 +116,28 @@ inputfilename = sys.argv[1]
 
 outputfilename="a.out"
 
-source = open(inputfilename,"r").readlines()
+raw_source = open(inputfilename,"r").readlines()
 
-ops = []
-linum = -1
-for line in source:
-    linum += 1
-    i = line.find(";")
-    if i>=0:
-        l = line[:i]
-    else:
-        l = line
+# preprocess
+pp_source = preprocess(raw_source)
 
-    instr = l.strip()
-    if len(instr) == 0:
-        continue
+try:
+    # Harvest labels
+    source,labels = harvest_labels(pp_source)
 
-    mnemonic = instr[0:3]
-    argument=instr[3:].strip()
-    addrmode,operand = isa6502.parse_argument(argument)
-    try:
-        opcode = isa6502.get_opcode(mnemonic,addrmode)
-    except isa6502.SyntaxError as e:
-        print("SyntaxError on line {}: {}".format(linum,str(e)))
-        print(line)
-        sys.exit(1)
-    instr_bytes = isa6502.encode(opcode,addrmode,operand)
-    ops.extend(instr_bytes)
+    instructions = parse_instructions(source)
 
-prog = bytes(ops)
+    instructions = resolve_labels(instructions,labels)
 
-# prog_size = len(prog)
-
-# bootloader_size = 256
-# start_address = 0xff00-prog_size
-# start_address_lsb = 0xff & start_address
-# start_address_msb = 0xff & (start_address >> 8)
+except isa6502.SyntaxError as e:
+    linum = e.get_linum()
+    print("SyntaxError on line {}: {}".format(linum,str(e)))
+    print(raw_source[linum])
+    sys.exit(1)
 
 
-# ## bootloader layout
-# #            00    01    02   ...    fa    fb        fc     fd     fe   ff
-# # ff00      STP   STP   STP         STP   STP    sa_lsb sa_msb      0    0
-# bootloader = bytes(((bootloader_size-4)*[isa6502.instr_to_opcode("STP")])+[start_address_lsb, start_address_msb, 0x00, 0x00])
+prog = encode(instructions)
 
-# fullprog=prog+bootloader
+
 
 open(outputfilename,"wb").write(prog)

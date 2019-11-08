@@ -5,8 +5,14 @@
         LDA #$be
         EOR #$ff
         STA $0200
-        INC A
+nisse:  INC A
         STA $0200
+        LDA #$11
+loop:
+        STA $0200
+        DEC A
+        CMP #$00
+        BNE loop
         NOP
         NOP
         STP
