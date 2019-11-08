@@ -68,23 +68,46 @@ ISA = {
     }
 
 
+def operand_to_str(addrmode,operand):
+    if addrmode == "i":
+        arg = ""
+    elif addrmode == "A":
+        arg = "A"
+    elif addrmode in ["zp,x", "zp,y"]:
+        offset=addrmode[-1].upper()
+        arg = "${:02x},{}".format(operand,offset)
+    elif addrmode == "zp":
+        arg = "${:02x}".format(operand)
+    elif addrmode == "(zp)":
+        arg = "(${:02x})".format(operand)
+    elif addrmode == "(zp,x)":
+        arg = "(${:02x},X)".format(operand)
+    elif addrmode == "(zp),y":
+        arg = "(${:02x}),Y".format(operand)
+    elif addrmode == "#":
+        arg = "#${:02x}".format(operand)
+    elif addrmode in ["a,x", "a,y"]:
+        offset=addrmode[-1].upper()
+        arg = "${:04x},{}".format(operand,offset)
+    elif addrmode == "a":
+        arg = "${:04x}".format(operand)
+    elif addrmode == "(a)":
+        arg = "(${:04x})".format(operand)
+    elif addrmode == "(a,x)":
+        arg = "(${:04x},X)".format(operand)
+    elif addrmode == "r":
+        arg = "${:02x}".format(operand)
+    else:
+        raise Exception("Invalid addressing mode:",addrmode)
+    return arg
+
 class Instruction():
     def __init__(self,opcode,operand):
         self._opcode = opcode
         self._operand = operand
     def __str__(self):
-        s = self.get_mnemonic()
-        opsize = operand_size(self.get_addrmode())
-
-        # TODO: remove this special case
-        if type(self._operand) == str:
-            s += " {}".format(self._operand)
-        elif opsize == 1:
-            s += " ${:x}".format(self._operand)
-        elif opsize == 2:
-            s += " ${:x}".format(self._operand)
-
-        return s
+        operandstr = operand_to_str(self.get_addrmode(),self._operand)
+        return (self.get_mnemonic() + " " + operandstr).strip()
 
     def get_addrmode(self):
         myop = ISA[self._opcode]
@@ -107,6 +130,7 @@ class Instruction():
         elif opsize == 2:
             bs.extend([self._operand & 0xff, (self._operand >>8) & 0xff])
         return bs
+
 
 class SyntaxError(Exception):
     pass
@@ -256,35 +280,25 @@ def operand_size(addrmode):
     else:
         raise Exception()
 
-def decode(mnemonic,addrmode,operand_bytes):
-    if addrmode == "i":
-        arg = ""
-    elif addrmode == "A":
-        arg = "A"
-    elif addrmode in ["zp,x", "zp,y"]:
-        offset=addrmode[-1].upper()
-        arg = "${:02x},{}".format(operand_bytes[0],offset)
-    elif addrmode == "zp":
-        arg = "${:02x}".format(operand_bytes[0])
-    elif addrmode == "(zp)":
-        arg = "(${:02x})".format(operand_bytes[0])
-    elif addrmode == "(zp,x)":
-        arg = "(${:02x},X)".format(operand_bytes[0])
-    elif addrmode == "(zp),y":
-        arg = "(${:02x}),Y".format(operand_bytes[0])
-    elif addrmode == "#":
-        arg = "#${:02x}".format(operand_bytes[0])
-    elif addrmode in ["a,x", "a,y"]:
-        offset=addrmode[-1].upper()
-        arg = "${:04x},{}".format(operand_bytes[0]+(operand_bytes[1]<<8),offset)
-    elif addrmode == "a":
-        arg = "${:04x}".format(operand_bytes[0]+(operand_bytes[1]<<8))
-    elif addrmode == "(a)":
-        arg = "(${:04x})".format(operand_bytes[0]+(operand_bytes[1]<<8))
-    elif addrmode == "(a,x)":
-        arg = "(${:04x},X)".format(operand_bytes[0]+(operand_bytes[1]<<8))
-    elif addrmode == "r":
-        arg = "${:02x}".format(operand_bytes[0])
+
+def decode_operand(operand_bytes):
+    if len(operand_bytes) == 2:
+        return operand_bytes[0]+(operand_bytes[1]<<8)
+    elif len(operand_bytes) == 1:
+        return operand_bytes[0]
     else:
-        raise Exception("Failed decoding instruction:",mnemonic,addrmode)
-    return (" ".join([mnemonic,arg])).strip()
+        return None
+
+
+def decode_instruction(bytes_in):
+    opcode = bytes_in[0]
+    addrmode = ISA[opcode][1]
+    operand_bytes = bytes_in[1:1+operand_size(addrmode)]
+    operand = decode_operand(operand_bytes)
+    return Instruction(opcode,operand)
+
+def parse_instruction(source_line):
+    mnemonic = source_line[0:3]
+    addrmode,operand = parse_argument(source_line[3:].strip())
+    opcode = get_opcode(mnemonic,addrmode)
+    return Instruction(opcode,operand)

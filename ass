@@ -62,13 +62,8 @@ def harvest_labels(src_in):
 def parse_instructions(source):
     instructions = []
     for line,linum in source:
-
         try:
-            mnemonic = line[0:3]
-            argument=line[3:].strip()
-            addrmode,operand = isa6502.parse_argument(argument)
-            opcode = isa6502.get_opcode(mnemonic,addrmode)
-            instructions.append(isa6502.Instruction(opcode,operand))
+            instructions.append(isa6502.parse_instruction(line))
         except isa6502.SyntaxError as e:
             # e.set_linum(linum)
             raise e
