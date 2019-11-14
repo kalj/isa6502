@@ -53,6 +53,8 @@ ISA = {
 
     # Branches
     0xd0:("BNE","r"),
+    0xb0:("BCS","r"),
+    0x80:("BRA","r"),
 
     # CMP
     0xcd:("CMP","a"),
@@ -64,6 +66,28 @@ ISA = {
     0xd5:("CMP","zp,x"),
     0xd2:("CMP","(zp)"),
     0xd1:("CMP","(zp),y"),
+
+    # LDX
+    0xae:("LDX","a"),
+    0xbe:("LDX","a,y"),
+    0xa2:("LDX","#"),
+    0xa6:("LDX","zp"),
+    0xb6:("LDX","zp,y"),
+
+    # STX
+    0x8e:("STX","a"),
+    0x86:("STX","zp"),
+    0x96:("STX","zp,y"),
+
+    # INX
+    0xe8:("INX","i"),
+
+    # ASL
+    0x0e:("ASL","a"),
+    0x1e:("ASL","a,x"),
+    0x0A:("ASL","A"),
+    0x06:("ASL","zp"),
+    0x16:("ASL","zp,x"),
 
     }
 
