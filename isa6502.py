@@ -133,7 +133,16 @@ class Instruction():
 
 
 class SyntaxError(Exception):
-    pass
+    def __init__(self,message):
+        super().__init__(message)
+        self._linum = None
+
+    def set_linum(self,linum):
+        self._linum = linum
+
+    def get_linum(self):
+        return self._linum
+
 
 def parse_literal(literal):
     if literal[0] == "$":

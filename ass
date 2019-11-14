@@ -65,7 +65,7 @@ def parse_instructions(source):
         try:
             instructions.append(isa6502.parse_instruction(line))
         except isa6502.SyntaxError as e:
-            # e.set_linum(linum)
+            e.set_linum(linum)
             raise e
 
     return instructions
@@ -126,8 +126,11 @@ try:
 
 except isa6502.SyntaxError as e:
     linum = e.get_linum()
-    print("SyntaxError on line {}: {}".format(linum,str(e)))
-    print(raw_source[linum])
+    if linum:
+        print("SyntaxError on line {}: {}".format(linum,str(e)))
+        print(raw_source[linum])
+    else:
+        print("SyntaxError: {}".format(str(e)))
     sys.exit(1)
 
 
