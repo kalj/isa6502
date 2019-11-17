@@ -4,12 +4,8 @@
 
 import sys
 import re
+import argparse
 import isa6502
-
-# class Token:
-#     pass
-
-
 
 # ===================================================================
 # preprocess
@@ -102,40 +98,40 @@ def encode(instructions):
 
     return bytes(ops)
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='6502 Assembler')
+    parser.add_argument('input', help='name of source file to assemble')
+    parser.add_argument('-o','--output',
+                        default='a.out',
+                        help='name of output file')
 
-if len(sys.argv) < 1:
-    print("Input filename required")
-    sys.exit(1)
+    args = parser.parse_args()
 
-inputfilename = sys.argv[1]
+    inputfilename=args.input
+    outputfilename=args.output
 
-outputfilename="a.out"
+    raw_source = open(inputfilename,"r").readlines()
 
-raw_source = open(inputfilename,"r").readlines()
+    # preprocess
+    pp_source = preprocess(raw_source)
 
-# preprocess
-pp_source = preprocess(raw_source)
+    try:
+        # Harvest labels
+        source,labels = harvest_labels(pp_source)
 
-try:
-    # Harvest labels
-    source,labels = harvest_labels(pp_source)
+        instructions = parse_instructions(source)
 
-    instructions = parse_instructions(source)
+        instructions = resolve_labels(instructions,labels)
 
-    instructions = resolve_labels(instructions,labels)
+    except isa6502.SyntaxError as e:
+        linum = e.get_linum()
+        if linum:
+            print("SyntaxError on line {}: {}".format(linum,str(e)))
+            print(raw_source[linum])
+        else:
+            print("SyntaxError: {}".format(str(e)))
+        sys.exit(1)
 
-except isa6502.SyntaxError as e:
-    linum = e.get_linum()
-    if linum:
-        print("SyntaxError on line {}: {}".format(linum,str(e)))
-        print(raw_source[linum])
-    else:
-        print("SyntaxError: {}".format(str(e)))
-    sys.exit(1)
+    prog = encode(instructions)
 
-
-prog = encode(instructions)
-
-
-
-open(outputfilename,"wb").write(prog)
+    open(outputfilename,"wb").write(prog)
