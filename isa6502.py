@@ -79,8 +79,23 @@ ISA = {
     0x86:("STX","zp"),
     0x96:("STX","zp,y"),
 
+    # LDY
+    0xac:("LDY","a"),
+    0xbc:("LDY","a,x"),
+    0xa0:("LDY","#"),
+    0xa4:("LDY","zp"),
+    0xb4:("LDY","zp,x"),
+
+    # STY
+    0x8c:("STY","a"),
+    0x84:("STY","zp"),
+    0x94:("STY","zp,x"),
+
     # INX
     0xe8:("INX","i"),
+
+    # DEX
+    0xca:("DEX","i"),
 
     # ASL
     0x0e:("ASL","a"),
