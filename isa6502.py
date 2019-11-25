@@ -122,10 +122,10 @@ def operand_to_str(addrmode,operand):
         arg = "A"
     # zero-page indexed
     elif addrmode in ["zp", "(zp,x)", "zp,x", "zp,y", "(zp)", "(zp),y"]:
-        arg = addrmode.replace("zp","${:02x}".format(operand)).upper()
+        arg = addrmode.upper().replace("ZP","${:02x}".format(operand))
     # absolute indexed
     elif addrmode in ["a", "(a,x)", "a,x", "a,y", "(a)"]:
-        arg = addrmode.replace("a","${:04x}".format(operand)).upper()
+        arg = addrmode.upper().replace("A","${:04x}".format(operand))
     elif addrmode == "#":
         arg = "#${:02x}".format(operand)
     elif addrmode == "r":
@@ -333,6 +333,8 @@ def decode_operand(operand_bytes):
 
 def decode_instruction(bytes_in):
     opcode = bytes_in[0]
+    if not opcode in ISA:
+        raise Exception("Unknown opcode: 0x{:02x}".format(opcode))
     addrmode = ISA[opcode][1]
     operand_bytes = bytes_in[1:1+operand_size(addrmode)]
     operand = decode_operand(operand_bytes)

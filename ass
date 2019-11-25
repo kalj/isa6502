@@ -92,8 +92,14 @@ class Data:
     def __init__(self,bs):
         self._bytes = bs
 
+    def __str__(self):
+        return ".bytes "+str(self._bytes)
+
     def size(self):
         return len(self._bytes)
+
+    def encode(self):
+        return self._bytes
 
 def parse_statement(line):
 
@@ -109,7 +115,7 @@ def parse_statement(line):
     elif line.startswith(".asciiz "):
          # null-terminated ascii string
         bytez = parse_string(line[7:].strip())
-        return Data(bytez+[0]) # append null byte
+        return Data(bytez+b'\0') # append null byte
     else:
         return isa6502.parse_instruction(line)
 
@@ -142,16 +148,19 @@ def resolve_labels(statements,labels,base_address):
 
     return statements
 
-def encode(instructions):
+def encode(statements):
     ops = []
-    for instr in instructions:
-        ops.extend(instr.encode())
+    for stmt in statements:
+        ops.extend(stmt.encode())
 
     return bytes(ops)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='6502 Assembler')
     parser.add_argument('input', help='name of source file to assemble')
+    parser.add_argument('-v','--verbose',
+                        action='store_true',
+                        help='enable verbose output')
     parser.add_argument('-o','--output',
                         default='a.out',
                         help='name of output file')
@@ -187,6 +196,20 @@ if __name__ == '__main__':
         else:
             print("SyntaxError: {}".format(str(e)))
         sys.exit(1)
+
+    if args.verbose:
+        addr = base_address
+        source = []
+        for s in statements:
+            instr_bytes = s.encode()
+            bytes_str = " ".join(["{:02x}".format(b) for b in instr_bytes])
+            source.append( ("{:04x}".format(addr),bytes_str,str(s)) )
+            addr += s.size()
+        widths = [max(len(s) for s in strs) for strs in zip(*source)]
+
+        print("Parsed code:")
+        for line in source:
+            print("{}  {}  {}".format(line[0],line[1].ljust(widths[1]),line[2]))
 
     prog = encode(statements)
 
