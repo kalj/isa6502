@@ -52,6 +52,7 @@ ISA = {
     0xd6:("DEC","zp,x"),
 
     # Branches
+    0xf0:("BEQ","r"),
     0xd0:("BNE","r"),
     0xb0:("BCS","r"),
     0x80:("BRA","r"),
