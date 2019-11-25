@@ -2,33 +2,73 @@
 #
 #
 
-import sys
 import isa6502
+import argparse
 
-if len(sys.argv) < 1:
-    print("Input filename required")
-    sys.exit(1)
+def disassemble(prog):
+    instructions = []
+    bytesize = len(prog)
+    bytenum=0
+    while bytenum < bytesize:
+        instr = isa6502.decode_instruction(prog[bytenum:])
+        instr_size = instr.size()
+        instr_bytes = prog[bytenum:(bytenum+instr_size)]
+        instructions.append((bytenum,instr_bytes,instr))
+        bytenum += instr_size
+    return instructions
 
-inputfilename = sys.argv[1]
+def format_source(instructions, base_address):
+    source = []
+    next_label_id = 1
+    labels = []
+    for offset,instr_bytes,instr in instructions:
+        instr_size = instr.size()
+        address = base_address+offset
+        bytes_str = " ".join(["{:02x}".format(b) for b in instr_bytes])
+        source_line = "{:04x}  {:8s}  {}".format(address,bytes_str,instr)
+        if instr.get_addrmode() == "r":
+            branch_offset = instr._operand
+            if branch_offset > 127:
+                branch_offset -= 256
+            source_line = "{:28} ; ${:04x}".format(source_line,address+instr_size+branch_offset)
+        if instr.get_mnemonic() in ["JSR", "JMP"]:
+            target_addr = instr._operand
+            label = "sub_{:04d}".format(next_label_id)
+            next_label_id += 1
+            labels.append((label,target_addr))
+            source_line = "{:04x}  {:8s}  {} {}".format(address,bytes_str,instr.get_mnemonic(),label)
 
-prog = open(inputfilename,"rb").read()
+        source.append(source_line)
 
-source = []
-bytesize = len(prog)
-bytenum=0
-while bytenum < bytesize:
-    instr = isa6502.decode_instruction(prog[bytenum:])
-    instr_size = instr.size()
-    bytes_str = " ".join(["{:02x}".format(b) for b in prog[bytenum:(bytenum+instr_size)]])
-    source_line = "{:04x}  {:8s}  {}".format(bytenum,bytes_str,instr)
-    if instr.get_addrmode() == "r":
-        branch_offset = instr._operand
-        if branch_offset > 127:
-            branch_offset -= 256
-        source_line = "{:28} ; ${:04x}".format(source_line,bytenum+instr_size+branch_offset)
+    for lbl,addr in labels:
+        addrstr="{:04x}".format(addr)
+        lines = [line for line in source if line.startswith(addrstr)]
+        assert len(lines) == 1
+        i = source.index(lines[0])
+        source.insert(i,"{}:".format(lbl))
 
-    source.append(source_line)
-    bytenum += instr_size
+    return source
 
-for l in source:
-    print(l)
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='6502 Disassembler')
+    parser.add_argument('input', help='name of binary to disassemble')
+    parser.add_argument('-b','--base-address',
+                        default=0x8000,
+                        help='base address offset')
+
+    args = parser.parse_args()
+
+    base_address = args.base_address
+
+    inputfilename = args.input
+
+    prog = open(inputfilename,"rb").read()
+
+    instructions = disassemble(prog)
+
+    source = format_source(instructions,base_address)
+
+    for l in source:
+        print(l)

@@ -119,38 +119,26 @@ def operand_to_str(addrmode,operand):
         arg = ""
     elif addrmode == "A":
         arg = "A"
-    elif addrmode in ["zp,x", "zp,y"]:
-        offset=addrmode[-1].upper()
-        arg = "${:02x},{}".format(operand,offset)
-    elif addrmode == "zp":
-        arg = "${:02x}".format(operand)
-    elif addrmode == "(zp)":
-        arg = "(${:02x})".format(operand)
-    elif addrmode == "(zp,x)":
-        arg = "(${:02x},X)".format(operand)
-    elif addrmode == "(zp),y":
-        arg = "(${:02x}),Y".format(operand)
+    # zero-page indexed
+    elif addrmode in ["zp", "(zp,x)", "zp,x", "zp,y", "(zp)", "(zp),y"]:
+        arg = addrmode.replace("zp","${:02x}".format(operand)).upper()
+    # absolute indexed
+    elif addrmode in ["a", "(a,x)", "a,x", "a,y", "(a)"]:
+        arg = addrmode.replace("a","${:04x}".format(operand)).upper()
     elif addrmode == "#":
         arg = "#${:02x}".format(operand)
-    elif addrmode in ["a,x", "a,y"]:
-        offset=addrmode[-1].upper()
-        arg = "${:04x},{}".format(operand,offset)
-    elif addrmode == "a":
-        arg = "${:04x}".format(operand)
-    elif addrmode == "(a)":
-        arg = "(${:04x})".format(operand)
-    elif addrmode == "(a,x)":
-        arg = "(${:04x},X)".format(operand)
     elif addrmode == "r":
         arg = "${:02x}".format(operand)
     else:
         raise Exception("Invalid addressing mode:",addrmode)
     return arg
 
-class Instruction():
-    def __init__(self,opcode,operand):
+class Instruction:
+    def __init__(self,opcode,operand,label):
         self._opcode = opcode
         self._operand = operand
+        self._label = label
+
     def __str__(self):
         operandstr = operand_to_str(self.get_addrmode(),self._operand)
         return (self.get_mnemonic() + " " + operandstr).strip()
@@ -177,6 +165,25 @@ class Instruction():
             bs.extend([self._operand & 0xff, (self._operand >>8) & 0xff])
         return bs
 
+    def resolve_label(self,label_addresses,my_address):
+        if self._label:
+            if self.get_addrmode() == "r":
+                # special case for program-counter-relative address mode
+
+                # pc is incremented before jump, add size of this instruction
+                pc_address = (my_address+self.size())
+
+                branch_offset = label_addresses[self._label] - pc_address
+
+                if branch_offset > 127 or branch_offset < -128:
+                    raise SyntaxError("Out of range branch (branches are limited to -128 to +127)")
+
+                branch_offset = (branch_offset+256) % 256 # convert to unsigned
+
+                self._operand = branch_offset
+            else:
+                self._operand = label_addresses[self._label]
+
 
 class SyntaxError(Exception):
     def __init__(self,message):
@@ -190,14 +197,18 @@ class SyntaxError(Exception):
         return self._linum
 
 
-def parse_literal(literal):
-    if literal[0] == "$":
+def parse_parameter(literal):
+    if re.match("^[a-zA-Z_]\w*$",literal[0]):
+        # Found a label. Implies a 2-byte address, i.e. "a". Just
+        # return the label, the address will be resolved later.
+        return "a",literal
+    elif literal[0] == "$":
         if len(literal) == 3:
             return "zp",int(literal[1:],16)
         elif len(literal) == 5:
             return "a",int(literal[1:],16)
         else:
-            raise SyntaxError("Invalid length of literal:",literal)
+            raise SyntaxError("Invalid length of literal: {}".format(literal))
     else:
         val = int(literal)
         if val > 255:
@@ -205,122 +216,96 @@ def parse_literal(literal):
         else:
             return "zp",val
 
-
-
 def opcode_to_instr(op):
-    matches = [i for o,i in ISA.items() if op==o and len(i)>0]
-    nmatches = len(matches)
-    if nmatches >1:
-        raise Exception('Internal error, multiple opcodes matched')
-    if nmatches == 0:
+    if not op in ISA:
         # unknown opcode
         return "UNK"
     else:
-        return matches[0]
+        return ISA[op]
 
-def get_opcode(mnemonic,addrmode):
+def identify_opcode(mnemonic,argfmt):
 
-    matches = [o for o,i in ISA.items() if len(i)>0 and i[0]==mnemonic and i[1]==addrmode]
-    nmatches = len(matches)
-    if nmatches >1:
-        raise Exception('Internal error, multiple instructions matched')
-    if nmatches == 0:
-        raise SyntaxError("Unknown instruction: {} ({})".format(mnemonic,addrmode))
+    mnematches = [(o,i) for o,i in ISA.items() if len(i)>0 and i[0]==mnemonic]
+
+    if len(mnematches) == 0:
+        raise SyntaxError("Unknown instruction mnemonic: {}".format(mnemonic))
+
+    # try to match address mode
+
+    if argfmt == "lbl":
+        # we have a label (and only a label)
+        matches = [o for o,i in mnematches if i[1] in ["r", "a"]]
+    else:
+        matches = [o for o,i in mnematches if i[1]==argfmt]
+
+    if len(matches) == 0:
+        raise SyntaxError("Unknown instruction: {} {}".format(mnemonic,addrfmt))
+
+    if len(matches)>1:
+        raise Exception('Internal error, multiple instructions matched {} {}'.format(mnemonic,addrfmt))
         # unknown instruction
         # return 0x00
-    else:
-        return matches[0]
+
+    return matches[0]
 
 def parse_argument(arg):
+
     if len(arg)==0:
-        addrmode="i"
-        operand=None
+        return "i",None
 
-    elif re.match("#",arg):
-        addrmode = "#"
-        t,v = parse_literal(arg[1:])
-        if t != "zp":
+    if re.match("#",arg):
+        param_type,val = parse_parameter(arg[1:])
+        if param_type != "zp":
             raise SyntaxError("Too large literal in immediate addressing")
-        operand=(v)
+        return "#", val
 
-    elif arg == "A":
-        addrmode = "A"
-        operand = None
+    if arg == "A":
+        return "A",None
 
-    # match stuff like ($44); ($4444); and (273)
-    elif re.match("^\(([^,]+)\)$",arg):
-        m = re.match("^\(([^,]+)\)$",arg)
-        literal_type,val = parse_literal(m.group(1))
-        addrmode = "({})".format(literal_type)
-        operand = val
+    # match stuff like ($44); ($4444); (273); and (label)
+    m = re.match("^\(([^,]+)\)$",arg)
+    if m:
+        param_type,val = parse_parameter(m.group(1))
+        return "({})".format(param_type), val
 
-    # match stuff like ($44,X); ($4444,X); and (273,X)
-    elif re.match("^\(([^,]+),([^,]+)\)$",arg):
-        m = re.match("^\(([^,]+),([^,]+)\)$",arg)
-        o1 = m.group(1)
-        o2 = m.group(2)
-        if not o2=="X":
-            raise SyntaxError("Invalid offset for indexed indirect operand string:",arg)
-
-        literal_type,val = parse_literal(o1)
-        addrmode = "({},x)".format(literal_type)
-        operand = val
+    # match stuff like ($44,X); ($4444,X); (273,X); and (label,X)
+    m = re.match("^\(([^,]+),(X)\)$",arg)
+    if m:
+        param_type,val = parse_parameter(m.group(1))
+        return "({},x)".format(param_type),val
 
     # match stuff like ($44),Y; (123),Y
-    elif re.match("^\((.+)\),(.+)$",arg):
-        m = re.match("^\((.+)\),(.+)$",arg)
-        o1 = m.group(1)
-        o2 = m.group(2)
-        if not o2=="Y":
-            raise SyntaxError("Invalid offset for Zero Page Indirect Indexed operand string:",arg)
-        literal_type,val = parse_literal(o1)
-        if literal_type != "zp":
+    m = re.match("^\((.+)\),(Y)$",arg)
+    if m:
+        param_type,val = parse_parameter(m.group(1))
+        if param_type != "zp":
             raise SyntaxError("Invalid format of base literal for Zero Page Indirect Indexed operand string:",arg)
-        addrmode = "(zp),y"
-        operand = val
+        return "(zp),y",val
 
-    # match stuff like $44,X; $4444,Y; and 273,X
-    elif re.match("^([^,]+),([^,]+)$",arg):
-        m = re.match("^([^,]+),([^,]+)$",arg)
+    # match stuff like $44,X; $4444,Y; 273,X; and label,Y
+    m = re.match("^([^,]+),([XY])$",arg)
+    if m:
         o1 = m.group(1)
         o2 = m.group(2)
 
-        literal_type,val = parse_literal(o1)
-
-        if not o2 in ["X","Y"]:
-            if literal_type=='zp':
-                idxtype = "Zero Page"
-            else:
-                idxtype = "Absolute"
-            raise SyntaxError("Invalid offset for {} Indexed operand string: {}".format(idxtype,arg))
-
+        param_type,val = parse_parameter(o1)
         offset = o2.lower()
 
-        addrmode = "{},{}".format(literal_type,o2.lower())
-        operand = val
+        return "{},{}".format(param_type,offset),val
 
     # match stuff like $44; $4444; 273
-    elif re.match("\$?\d+",arg):
-        m = re.match("\$?\d+",arg)
-        literal_type,val = parse_literal(m.group(0))
+    if re.match("\$?\d+",arg):
+        param_type,val = parse_parameter(arg)
         # TODO: allow for explicit relative addressing
-        addrmode = literal_type
-        operand = val
+        return param_type,val
 
     # match a label
-    elif re.match("[A-Za-z]\d*",arg):
-        addrmode = "r"
-        operand = arg
-        # if literal_type=='zp' and mnemonic == ":
-        #     return 'zp|r'
-        # else:
-        #     return 'a'
+    if re.match("[A-Za-z_]",arg):
+        return "lbl",arg
 
     # default - Invalid addressing mode
-    else:
-        raise SyntaxError() #"Invalid operand string: {}".format(arg)
+    raise SyntaxError("Invalid operand string: {}".format(arg))
 
-    return addrmode,operand
 
 def operand_size(addrmode):
     # no operand
@@ -333,7 +318,7 @@ def operand_size(addrmode):
     elif addrmode in ["a", "(a,x)", "a,x", "a,y", "(a)"]:
         return 2
     else:
-        raise Exception()
+        raise Exception("Invalid addressing mode:",addrmode)
 
 
 def decode_operand(operand_bytes):
@@ -350,10 +335,16 @@ def decode_instruction(bytes_in):
     addrmode = ISA[opcode][1]
     operand_bytes = bytes_in[1:1+operand_size(addrmode)]
     operand = decode_operand(operand_bytes)
-    return Instruction(opcode,operand)
+    return Instruction(opcode,operand,None)
 
 def parse_instruction(source_line):
     mnemonic = source_line[0:3]
-    addrmode,operand = parse_argument(source_line[3:].strip())
-    opcode = get_opcode(mnemonic,addrmode)
-    return Instruction(opcode,operand)
+    arg_fmt, param = parse_argument(source_line[3:].strip())
+
+    opcode = identify_opcode(mnemonic,arg_fmt)
+
+    if type(param) == str:
+        # param is a label
+        return Instruction(opcode,None,param)
+    else:
+        return Instruction(opcode,param,None)

@@ -9,7 +9,10 @@ import isa6502
 
 # ===================================================================
 # preprocess
+#
+# remove comments and empty lines
 # ===================================================================
+
 def preprocess(src_in):
     src_out = []
     for i,line in enumerate(src_in):
@@ -34,7 +37,7 @@ def harvest_labels(src_in):
     current_labels = []
     src_out = []
     for line,linum in src_in:
-        m = re.match("^(\w+):(.*)$",line)
+        m = re.match("^([a-zA-Z_]\w*):(.*)$",line)
         if m:
             current_labels.append(m.group(1))
             line = m.group(2).strip()
@@ -55,41 +58,89 @@ def harvest_labels(src_in):
 
     return src_out,labels
 
-def parse_instructions(source):
-    instructions = []
+# ===================================================================
+# Parse statements (instructions and data directives)
+# ===================================================================
+
+def parse_byte(s):
+    try:
+        if s[0] == "$":
+            v = int(s[1:],16)
+        else:
+            v = int(s)
+    except:
+        raise SyntaxError("Invalid byte token: {}".format(s))
+
+    if v > 255 or v<-128:
+        raise SyntaxError("Integer value of token out of 8-bit range: {}".format(s))
+
+    # convert to unsigned
+    v = (v+256) % 256
+
+    return v
+
+def parse_string(s):
+   if s[0] != '"' or s[-1] != '"':
+       raise SyntaxError("Not a valid ascii string")
+
+   try:
+       return s[1:-1].encode()
+   except:
+       raise SyntaxError("Failed encoding ascii string")
+
+class Data:
+    def __init__(self,bs):
+        self._bytes = bs
+
+    def size(self):
+        return len(self._bytes)
+
+def parse_statement(line):
+
+    if line.startswith(".byte "):
+        args = [ a.strip() for a in line[5:].split(",")]
+        bytez = bytes([parse_byte(a) for a in args])
+        return Data(bytez)
+
+    elif line.startswith(".ascii "):
+        # ascii string
+        bytez = parse_string(line[6:].strip())
+        return Data(bytez)
+    elif line.startswith(".asciiz "):
+         # null-terminated ascii string
+        bytez = parse_string(line[7:].strip())
+        return Data(bytez+[0]) # append null byte
+    else:
+        return isa6502.parse_instruction(line)
+
+def parse_lines(source):
+    statements = []
     for line,linum in source:
         try:
-            instructions.append(isa6502.parse_instruction(line))
+            statements.append(parse_statement(line))
         except isa6502.SyntaxError as e:
             e.set_linum(linum)
             raise e
 
-    return instructions
+    return statements
 
-def resolve_labels(instructions_in,labels):
+def resolve_labels(statements,labels,base_address):
 
-    byte_offset = 0
-    instr_offsets = []
+    byte_offset = base_address
+    addresses = []
 
-    for instr in instructions_in:
-        instr_offsets.append(byte_offset)
-        byte_offset += instr.size()
+    for stmt in statements:
+        addresses.append(byte_offset)
+        byte_offset += stmt.size()
 
-    label_offsets = {l:instr_offsets[idx] for l,idx in labels.items()}
+    label_addresses = {l:addresses[idx] for l,idx in labels.items()}
 
-    for i,instr in enumerate(instructions_in):
-        if instr.get_addrmode() == "r":
-            label = instr._operand
-            branch_offset = label_offsets[label] - (instr_offsets[i]+instr.size())
+    for stmt,addr in zip(statements,addresses):
 
-            if branch_offset > 127 or branch_offset < -128:
-                raise SyntaxError("Out of range branch (branches are limited to -128 to +127)")
+        if isinstance(stmt,isa6502.Instruction):
+            stmt.resolve_label(label_addresses,addr)
 
-            branch_offset = (branch_offset+256) % 256 # convert to unsigned
-
-            instr._operand = branch_offset
-
-    return instructions_in
+    return statements
 
 def encode(instructions):
     ops = []
@@ -104,8 +155,13 @@ if __name__ == '__main__':
     parser.add_argument('-o','--output',
                         default='a.out',
                         help='name of output file')
+    parser.add_argument('-b','--base-address',
+                        default=0x8000,
+                        help='base address offset')
 
     args = parser.parse_args()
+
+    base_address = args.base_address
 
     inputfilename=args.input
     outputfilename=args.output
@@ -119,9 +175,9 @@ if __name__ == '__main__':
         # Harvest labels
         source,labels = harvest_labels(pp_source)
 
-        instructions = parse_instructions(source)
+        statements = parse_lines(source)
 
-        instructions = resolve_labels(instructions,labels)
+        statements = resolve_labels(statements,labels,base_address)
 
     except isa6502.SyntaxError as e:
         linum = e.get_linum()
@@ -132,6 +188,6 @@ if __name__ == '__main__':
             print("SyntaxError: {}".format(str(e)))
         sys.exit(1)
 
-    prog = encode(instructions)
+    prog = encode(statements)
 
     open(outputfilename,"wb").write(prog)
