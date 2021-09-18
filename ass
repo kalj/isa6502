@@ -135,7 +135,9 @@ def parse_string(s):
        raise SyntaxError("Not a valid ascii string")
 
    try:
-       return s[1:-1].encode()
+       the_string=s[1:-1]
+       the_string=the_string.replace('\\n', '\n').replace('\\t', '\t')
+       return the_string.encode()
    except:
        raise SyntaxError("Failed encoding ascii string")
 
