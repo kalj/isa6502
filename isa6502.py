@@ -28,6 +28,29 @@ ISA = {
     0x91:("STA","(zp),y"),
     0x92:("STA","(zp)"),
 
+    # ADC
+    0x6d:("ADC", "a"),
+    0x7d:("ADC", "a,x"),
+    0x79:("ADC", "a,y"),
+    0x69:("ADC", "#"),
+    0x65:("ADC", "zp"),
+    0x61:("ADC", "(zp,x)"),
+    0x75:("ADC", "zp,x"),
+    0x72:("ADC", "(zp)"),
+    0x71:("ADC", "(zp),y"),
+
+    # SBC
+    0xed:("SBC", "a"),
+    0xfd:("SBC", "a,x"),
+    0xf9:("SBC", "a,y"),
+    0xe9:("SBC", "#"),
+    0xe5:("SBC", "zp"),
+    0xe1:("SBC", "(zp,x)"),
+    0xf5:("SBC", "zp,x"),
+    0xf2:("SBC", "(zp)"),
+    0xf1:("SBC", "(zp),y"),
+
+
     # EOR
     0x4d:("EOR","a"),
     0x5d:("EOR","a,x"),
@@ -38,6 +61,17 @@ ISA = {
     0x55:("EOR","zp,x"),
     0x52:("EOR","(zp)"),
     0x51:("EOR","(zp),y"),
+
+    # AND
+    0x2d:("AND","a"),
+    0x3d:("AND","a,x"),
+    0x39:("AND","a,y"),
+    0x29:("AND","#"),
+    0x25:("AND","zp"),
+    0x21:("AND","(zp,x)"),
+    0x35:("AND","zp,x"),
+    0x32:("AND","(zp)"),
+    0x31:("AND","(zp),y"),
 
     # INC
     0x1a:("INC","A"),
@@ -57,7 +91,10 @@ ISA = {
     0xf0:("BEQ","r"),
     0xd0:("BNE","r"),
     0xb0:("BCS","r"),
+    0x90:("BCC","r"),
     0x80:("BRA","r"),
+    0x30:("BMI","r"),
+
 
     # CMP
     0xcd:("CMP","a"),
@@ -69,6 +106,16 @@ ISA = {
     0xd5:("CMP","zp,x"),
     0xd2:("CMP","(zp)"),
     0xd1:("CMP","(zp),y"),
+
+    # CPX
+    0xec:("CPX","a"),
+    0xe0:("CPX","#"),
+    0xe4:("CPX","zp"),
+
+    # CPY
+    0xcc:("CPY","a"),
+    0xc0:("CPY","#"),
+    0xc4:("CPY","zp"),
 
     # LDX
     0xae:("LDX","a"),
@@ -107,12 +154,40 @@ ISA = {
     0x06:("ASL","zp"),
     0x16:("ASL","zp,x"),
 
-    # T**
+    # LSR
+    0x4e:("LSR","a"),
+    0x5e:("LSR","a,x"),
+    0x4A:("LSR","A"),
+    0x46:("LSR","zp"),
+    0x56:("LSR","zp,x"),
+
+    # Transfers
     0xba:("TSX","i"),
+    0x9a:("TXS","i"),
+    0x8a:("TXA","i"),
+
+    # Push & pop ("pull")
+    0x48:("PHA", "i"),
+    0x68:("PLA", "i"),
+    0x5a:("PHY", "i"),
+    0x7a:("PLY", "i"),
+    0xda:("PHX", "i"),
+    0xfa:("PLX", "i"),
 
     # Jumps
     0x20:("JSR","a"),
     0x60:("RTS","i"),
+
+    # Clear flags
+    0x18:("CLC", "i"),
+    0xd8:("CLD", "i"),
+    0x58:("CLI", "i"),
+    0xb8:("CLV", "i"),
+
+    # Set flags
+    0x38:("SEC", "i"),
+    0xf8:("SED", "i"),
+    0x78:("SEI", "i"),
 
     }
 
