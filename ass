@@ -8,12 +8,12 @@ import argparse
 import isa6502
 
 # ===================================================================
-# preprocess
+# prune
 #
 # remove comments and empty lines
 # ===================================================================
 
-def preprocess(src_in):
+def prune(src_in):
     src_out = []
     for i,line in enumerate(src_in):
         idx = line.find(";")
@@ -30,6 +30,48 @@ def preprocess(src_in):
     return src_out
 
 # ===================================================================
+# preprocess
+#
+# gather variable definitions, and replaces references with values
+# ===================================================================
+
+class PreprocessorError(Exception):
+    def __init__(self,message, linum):
+        super().__init__(message)
+        self._linum = linum
+
+    def get_linum(self):
+        return self._linum
+
+
+def replace_variable_references(s, variables):
+    for name in variables:
+        val = variables[name]
+        s = re.sub(r'\b'+name+r'\b', val,  s)
+
+    return s
+
+def preprocess(src_in):
+    variables = {}
+    src_out = []
+    for line,linum in src_in:
+
+        if m := re.match("^#define ([a-zA-Z_]\w*)\s+(.*)$",line):
+            # variable definition
+            name = m.group(1)
+            if name in variables:
+                raise PreprocessorError("Redefinition of variable '{}'".format(name), linum)
+
+            value = m.group(2)
+            variables[name] = replace_variable_references(value, variables)
+        else:
+            line = replace_variable_references(line, variables)
+            src_out.append((line,linum))
+
+    return src_out
+
+
+# ===================================================================
 # Harvest labels
 # ===================================================================
 def harvest_labels(src_in):
@@ -39,24 +81,31 @@ def harvest_labels(src_in):
     for line,linum in src_in:
         m = re.match("^([a-zA-Z_]\w*):(.*)$",line)
         if m:
-            current_labels.append(m.group(1))
+            current_labels.append((m.group(1), linum))
             line = m.group(2).strip()
 
         if line:
             current_idx = len(src_out)
             if current_labels:
-                for l in current_labels:
-                    labels[l] = current_idx
+                for l,ln in current_labels:
+                    if l in labels:
+                        e = isa6502.SyntaxError("Duplicate label '{}', first label at {}".format(l,labels[l]['linum']))
+                        e.set_linum(ln)
+                        raise e
+                    labels[l] = {'idx':current_idx, 'linum':ln}
                 current_labels = []
 
             src_out.append((line,linum))
         # else line was empty, i.e. there was nothin after the label
 
     if current_labels:
-         SyntaxError("Label at end of file")
-         raise e
+        e = isa6502.SyntaxError("Label at end of file")
+        e.set_linum(src_in[-1][1])
+        raise e
 
+    labels = { k:v['idx'] for k,v in labels.items() }
     return src_out,labels
+
 
 # ===================================================================
 # Parse statements (instructions and data directives)
@@ -66,6 +115,8 @@ def parse_byte(s):
     try:
         if s[0] == "$":
             v = int(s[1:],16)
+        elif s[0] == "%":
+            v = int(s[1:],2)
         else:
             v = int(s)
     except:
@@ -165,7 +216,7 @@ if __name__ == '__main__':
                         default='a.out',
                         help='name of output file')
     parser.add_argument('-b','--base-address',
-                        default=0x8000,
+                        default=0xa000,
                         help='base address offset')
 
     args = parser.parse_args()
@@ -177,14 +228,16 @@ if __name__ == '__main__':
 
     raw_source = open(inputfilename,"r").readlines()
 
-    # preprocess
-    pp_source = preprocess(raw_source)
+    # prune
+    source_lines = prune(raw_source)
 
     try:
-        # Harvest labels
-        source,labels = harvest_labels(pp_source)
+        source_lines = preprocess(source_lines)
 
-        statements = parse_lines(source)
+        # Harvest labels
+        source_lines,labels = harvest_labels(source_lines)
+
+        statements = parse_lines(source_lines)
 
         statements = resolve_labels(statements,labels,base_address)
 
@@ -192,7 +245,7 @@ if __name__ == '__main__':
         linum = e.get_linum()
         if linum:
             print("SyntaxError on line {}: {}".format(linum,str(e)))
-            print(raw_source[linum])
+            print(raw_source[linum].rstrip())
         else:
             print("SyntaxError: {}".format(str(e)))
         sys.exit(1)
