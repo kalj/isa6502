@@ -1,4 +1,6 @@
 import re
+import ast
+import operator as op
 
 ISA = {
     # Misc implied
@@ -115,6 +117,12 @@ ISA = {
     }
 
 
+def u8_to_s8(u8val):
+    return (u8val+128)%256-128
+
+def s8_to_u8(s8val):
+    return s8val % 256
+
 def operand_to_str(addrmode,operand):
     if addrmode == "i":
         arg = ""
@@ -129,7 +137,7 @@ def operand_to_str(addrmode,operand):
     elif addrmode == "#":
         arg = "#${:02x}".format(operand)
     elif addrmode == "r":
-        arg = "${:02x}".format(operand)
+        arg = "{}".format(u8_to_s8(operand))
     else:
         raise Exception("Invalid addressing mode:",addrmode)
     return arg
@@ -174,6 +182,8 @@ class Instruction:
                 # pc is incremented before jump, add size of this instruction
                 pc_address = (my_address+self.size())
 
+                if not self._label in label_addresses:
+                    raise SyntaxError("Unknown label: {}".format(self._label))
                 branch_offset = label_addresses[self._label] - pc_address
 
                 if branch_offset > 127 or branch_offset < -128:
@@ -197,21 +207,56 @@ class SyntaxError(Exception):
     def get_linum(self):
         return self._linum
 
+#====================================================================
+# Simple mathematical expression parser and evaluator
+#====================================================================
 
-def parse_parameter(literal):
-    if re.match("^[a-zA-Z_]\w*$",literal[0]):
+# supported operators
+operators = {ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul,
+             ast.Div: op.truediv, ast.Pow: op.pow, ast.BitXor: op.xor,
+             ast.BitAnd: op.and_, ast.BitOr: op.or_, ast.Invert: op.invert,
+             ast.USub: op.neg}
+
+def eval_(node):
+    if isinstance(node, ast.Num): # <number>
+        return node.n
+    elif isinstance(node, ast.Name): # <variable>
+       if not node.id in variables:
+           raise SyntaxError("unknown variable in expression: {}".format(node.id))
+       return variables[node.id]
+    elif isinstance(node, ast.BinOp): # <left> <operator> <right>
+        return operators[type(node.op)](eval_(node.left), eval_(node.right))
+    elif isinstance(node, ast.UnaryOp): # <operator> <operand> e.g., -1
+        return operators[type(node.op)](eval_(node.operand))
+    else:
+        raise TypeError(node)
+
+def evaluate_constant_expression(expr):
+    # replace hexadecimal (prefix $), and binary (prefix %) literals
+    # which are incompatible with expected python syntax of ast
+    while m := re.search("\$[0-9ABCDEFabcdef]+",expr):
+        oldlit = m.group(0)
+        newlit = str(int(oldlit[1:],16))
+        expr = expr.replace(oldlit, newlit)
+
+    while m := re.search("%[01]+",expr):
+        oldlit = m.group(0)
+        newlit = str(int(oldlit[1:],2))
+        expr = expr.replace(oldlit, newlit)
+
+    return eval_(ast.parse(expr, mode='eval').body)
+
+def parse_parameter(param):
+    if re.match("^[a-zA-Z_]\w*$",param[0]):
         # Found a label. Implies a 2-byte address, i.e. "a". Just
         # return the label, the address will be resolved later.
-        return "a",literal
-    elif literal[0] == "$":
-        if len(literal) == 3:
-            return "zp",int(literal[1:],16)
-        elif len(literal) == 5:
-            return "a",int(literal[1:],16)
-        else:
-            raise SyntaxError("Invalid length of literal: {}".format(literal))
+        return "lbl",param
     else:
-        val = int(literal)
+        try:
+            val = evaluate_constant_expression(param)
+        except:
+            raise SyntaxError("Failed parsing parameter expression: {}".format(param))
+
         if val > 255:
             return "a",val
         else:
@@ -233,14 +278,14 @@ def identify_opcode(mnemonic,argfmt):
 
     # try to match address mode
 
-    if argfmt == "lbl":
+    if 'lbl' in argfmt:
         # we have a label (and only a label)
-        matches = [o for o,i in mnematches if i[1] in ["r", "a"]]
+        matches = [o for o,i in mnematches if i[1] in [argfmt.replace("lbl","r"), argfmt.replace("lbl","a")]]
     else:
         matches = [o for o,i in mnematches if i[1]==argfmt]
 
     if len(matches) == 0:
-        raise SyntaxError("Unknown instruction: {} {}".format(mnemonic,addrfmt))
+        raise SyntaxError("Unknown instruction: {} {}".format(mnemonic,argfmt))
 
     if len(matches)>1:
         raise Exception('Internal error, multiple instructions matched {} {}'.format(mnemonic,addrfmt))
@@ -249,41 +294,47 @@ def identify_opcode(mnemonic,argfmt):
 
     return matches[0]
 
+def mnemonic_to_opcode(mnemonic):
+    matches = [o for o,instr in ISA.items() if instr[0]==mnemonic]
+    if len(matches) != 1:
+        raise Exception(f"No unique matching instruction with mnemonic {mnemonic}: {matches}")
+
+    return matches[0]
+
 def parse_argument(arg):
 
     if len(arg)==0:
         return "i",None
 
-    if re.match("#",arg):
+    if re.match("^#",arg):
         param_type,val = parse_parameter(arg[1:])
         if param_type != "zp":
-            raise SyntaxError("Too large literal in immediate addressing")
+            raise SyntaxError("Too large literal in immediate addressing: {}".format(val))
         return "#", val
 
     if arg == "A":
         return "A",None
 
-    # match stuff like ($44); ($4444); (273); and (label)
-    m = re.match("^\(([^,]+)\)$",arg)
-    if m:
+    # match stuff like (<expr>) and (label)
+
+    if m := re.match("^\(([^,]+)\)$",arg):
         param_type,val = parse_parameter(m.group(1))
         return "({})".format(param_type), val
 
-    # match stuff like ($44,X); ($4444,X); (273,X); and (label,X)
-    m = re.match("^\(([^,]+),(X)\)$",arg)
-    if m:
+    # match stuff like (<expr>,X) and (label,X)
+
+    if m := re.match("^\(([^,]+),(X)\)$",arg):
         param_type,val = parse_parameter(m.group(1))
         return "({},x)".format(param_type),val
 
-    # match stuff like ($44),Y; (123),Y
-    m = re.match("^\((.+)\),(Y)$",arg)
-    if m:
+    # match stuff like (<expr>),Y
+    if m := re.match("^\((.+)\),(Y)$",arg):
         param_type,val = parse_parameter(m.group(1))
         if param_type != "zp":
             raise SyntaxError("Invalid format of base literal for Zero Page Indirect Indexed operand string:",arg)
         return "(zp),y",val
 
-    # match stuff like $44,X; $4444,Y; 273,X; and label,Y
+    # match stuff like <expr>,X and label,Y
     m = re.match("^([^,]+),([XY])$",arg)
     if m:
         o1 = m.group(1)
@@ -294,18 +345,13 @@ def parse_argument(arg):
 
         return "{},{}".format(param_type,offset),val
 
-    # match stuff like $44; $4444; 273
-    if re.match("\$?\d+",arg):
-        param_type,val = parse_parameter(arg)
-        # TODO: allow for explicit relative addressing
-        return param_type,val
+    # else:
+    # match label or expression)
+    param_type,val = parse_parameter(arg)
+    return param_type,val
 
-    # match a label
-    if re.match("[A-Za-z_]",arg):
-        return "lbl",arg
-
-    # default - Invalid addressing mode
-    raise SyntaxError("Invalid operand string: {}".format(arg))
+    # # default - Invalid addressing mode
+    # raise SyntaxError("Invalid operand string: {}".format(arg))
 
 
 def operand_size(addrmode):
@@ -341,7 +387,7 @@ def decode_instruction(bytes_in):
     return Instruction(opcode,operand,None)
 
 def parse_instruction(source_line):
-    mnemonic = source_line[0:3]
+    mnemonic = source_line[0:3].upper()
     arg_fmt, param = parse_argument(source_line[3:].strip())
 
     opcode = identify_opcode(mnemonic,arg_fmt)
