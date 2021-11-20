@@ -222,7 +222,7 @@ if __name__ == '__main__':
                         default='a.out',
                         help='name of output file')
     parser.add_argument('-b','--base-address',
-                        default=0xa000,
+                        default=0x9000,
                         type=auto_int,
                         help='base address offset')
 
