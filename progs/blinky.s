@@ -18,14 +18,14 @@ blink_loop:
     STA PORTA
     STA PORTB
 
-    LDX #$10
+    LDX #10
     JSR sleep200us
 
     LDA #$55
     STA PORTA
     STA PORTB
 
-    LDX #$10
+    LDX #10
     JSR sleep200us
 
     BRA blink_loop
@@ -36,10 +36,17 @@ the_end:
 
 ;; Subroutines
 
-sleep200us:
+sleep10ms:
     LDY #$ff
 
-sleep200us2:
+sleep10ms_2:
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
     NOP
     NOP
     NOP
@@ -51,8 +58,8 @@ sleep200us2:
     NOP
     NOP
     DEY
-    BNE sleep200us2
+    BNE sleep10ms_2
 
     DEX
-    BNE sleep200us
+    BNE sleep10ms
     RTS
