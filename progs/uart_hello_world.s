@@ -1,6 +1,6 @@
-#define UART_REG_STATUS $8100
-#define UART_REG_RXDATA $8101
-#define UART_REG_TXDATA $8102
+#define UART_REG_STATUS $8400
+#define UART_REG_RXDATA $8401
+#define UART_REG_TXDATA $8402
 #define UART_STATUS_TXFULL  %00000001
 #define UART_STATUS_RXEMPTY %00000010
 
@@ -21,11 +21,8 @@ print_loop:
 
 the_end:
 
-    JSR sleep200us
-    JSR sleep200us
-    JSR sleep200us
-    JSR sleep200us
-    JSR sleep200us
+    LDX #100
+    JSR sleep10ms
     BRA reset
     STP
     NOP
@@ -43,7 +40,10 @@ tx_full:
     STA UART_REG_TXDATA
     RTS
 
-sleep200us:
+sleep10ms:
+    LDY #$ff
+
+sleep10ms_2:
     NOP
     NOP
     NOP
@@ -61,91 +61,11 @@ sleep200us:
     NOP
     NOP
     NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
+    DEY
+    BNE sleep10ms_2
+
     DEX
-    BNE sleep200us
+    BNE sleep10ms
     RTS
 
 hello_str:
