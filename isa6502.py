@@ -144,8 +144,9 @@ ISA = {
     # INX
     0xe8:("INX","i"),
 
-    # DEX
+    # DEX, DEY
     0xca:("DEX","i"),
+    0x88:("DEY","i"),
 
     # ASL
     0x0e:("ASL","a"),
