@@ -251,10 +251,10 @@ if __name__ == '__main__':
     except isa6502.SyntaxError as e:
         linum = e.get_linum()
         if linum:
-            print("SyntaxError on line {}: {}".format(linum,str(e)))
-            print(raw_source[linum].rstrip())
+            print(f"SyntaxError on line {linum}: {e}", file=sys.stderr)
+            print(raw_source[linum].rstrip(), file=sys.stderr)
         else:
-            print("SyntaxError: {}".format(str(e)))
+            print(f"SyntaxError: {e}", file=sys.stderr)
         sys.exit(1)
 
     if args.verbose:
