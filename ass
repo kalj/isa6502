@@ -4,6 +4,7 @@
 
 import sys
 import re
+from pathlib import Path
 import argparse
 import isa6502
 
@@ -272,4 +273,8 @@ if __name__ == '__main__':
 
     prog = encode(statements)
 
-    open(outputfilename,"wb").write(prog)
+    if outputfilename == '-':
+        sys.stdout.buffer.write(prog)
+    else:
+        out_path = Path(outputfilename)
+        out_path.write_bytes(prog)

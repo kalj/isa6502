@@ -4,6 +4,7 @@
 
 import isa6502
 import argparse
+import sys
 
 def disassemble(prog):
     instructions = []
@@ -66,9 +67,10 @@ if __name__ == "__main__":
 
     base_address = args.base_address
 
-    inputfilename = args.input
-
-    prog = open(inputfilename,"rb").read()
+    if args.input == '-':
+        prog = sys.stdin.buffer.read()
+    else:
+        prog = open(args.input,"rb").read()
 
     instructions = disassemble(prog)
 
