@@ -7,7 +7,7 @@ import isa6502
 outputfilename="bootloader.bin"
 
 bootloader_size = 32
-start_address = 0xa000
+start_address = 0x9000
 start_address_lsb = 0xff & start_address
 start_address_msb = 0xff & (start_address >> 8)
 stopcode=isa6502.mnemonic_to_opcode("STP")

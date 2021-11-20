@@ -50,12 +50,16 @@ def format_source(instructions, base_address):
     return source
 
 
+def auto_int(x):
+        return int(x, 0)
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='6502 Disassembler')
     parser.add_argument('input', help='name of binary to disassemble')
     parser.add_argument('-b','--base-address',
-                        default=0x8000,
+                        type=auto_int,
+                        default=0x9000,
                         help='base address offset')
 
     args = parser.parse_args()

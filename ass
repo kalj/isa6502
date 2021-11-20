@@ -208,6 +208,9 @@ def encode(statements):
 
     return bytes(ops)
 
+def auto_int(x):
+        return int(x, 0)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='6502 Assembler')
     parser.add_argument('input', help='name of source file to assemble')
@@ -219,6 +222,7 @@ if __name__ == '__main__':
                         help='name of output file')
     parser.add_argument('-b','--base-address',
                         default=0xa000,
+                        type=auto_int,
                         help='base address offset')
 
     args = parser.parse_args()
