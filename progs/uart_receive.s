@@ -18,8 +18,8 @@ reset:
     TXS
 
     LDA #%11111111              ; Set all to output
-    STA DDRB                    ; 6002 data direction b
-    STA DDRA                    ; 6003 data direction a
+    STA DDRB                    ; data direction b
+    STA DDRA                    ; data direction a
     LDY #$00                    ; set port a to zeros, i.e. E low
     STY PORTA                   ; Send control bits
 
@@ -41,8 +41,6 @@ reset:
     LDA #%00000010              ; Return home
     JSR lcd_send_cmd
 
-;; Start printing characters
-    LDX #$00
 receive_loop:
     LDA UART_REG_STATUS
     AND #UART_STATUS_RXEMPTY
