@@ -4,24 +4,13 @@
 #define UART_STATUS_TXFULL  %00000001
 #define UART_STATUS_RXEMPTY %00000010
 
-#define PORTB $8000
-#define PORTA $8001
-#define DDRB  $8002
-#define DDRA  $8003
-#define EN    %10000000
-#define RW    %01000000
-#define RS    %00100000
+#define DPY_REG_CMD $8200
+#define DPY_REG_DATA  $8201
 
     ;; Reset stack pointer
 reset:
     LDX #$ff
     TXS
-
-    LDA #%11111111              ; Set all to output
-    STA DDRB                    ; data direction b
-    STA DDRA                    ; data direction a
-    LDY #$00                    ; set port a to zeros, i.e. E low
-    STY PORTA                   ; Send control bits
 
     LDA #%00111000              ; Set 8-bit/2-line mode
     JSR lcd_send_cmd
@@ -58,39 +47,16 @@ receive_loop:
 ;; Subroutines
 
 lcd_wait:
-    LDY #%00000000              ; set PORTB to input
-    STY DDRB
-lcd_wait_loop:
-    LDY #RW
-    STY PORTA
-    LDY #(RW | EN)
-    STY PORTA
-    LDY PORTB
-    BMI lcd_wait_loop
-    LDY #0                      ; E low
-    STY PORTA                   ; Send control
-    LDY #%11111111              ; set PORTB to input
-    STY DDRB
+    LDY DPY_REG_CMD             ; Load CMD register
+    BMI lcd_wait
     RTS
 
 lcd_send_cmd:
     JSR lcd_wait
-    STA PORTB                   ; Write accumulator to I/O register
-    LDY #0                      ; E low
-    STY PORTA                   ; Send control
-    LDY #EN                     ; E high
-    STY PORTA                   ; Send control
-    LDY #0                      ; E low
-    STY PORTA                   ; Send control
+    STA DPY_REG_CMD             ; Write accumulator to CMD register
     RTS                         ; Return
 
 lcd_send_byte:
     JSR lcd_wait
-    STA PORTB                   ; Write accumulator to I/O register
-    LDY #RS                     ; RS high, E low
-    STY PORTA                   ; Send control
-    LDY #(RS|EN)                ; RS high, E high
-    STY PORTA                   ; Send control
-    LDY #RS                     ; RS high, E low
-    STY PORTA                   ; Send control
+    STA DPY_REG_DATA            ; Write accumulator to DATA register
     RTS                         ; Return
