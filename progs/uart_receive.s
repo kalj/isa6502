@@ -4,8 +4,8 @@
 #define UART_STATUS_TXFULL  %00000001
 #define UART_STATUS_RXEMPTY %00000010
 
-#define DPY_REG_CMD $8200
-#define DPY_REG_DATA  $8201
+#define DPY_REG_CMD  $8200
+#define DPY_REG_DATA $8201
 
     ;; Reset stack pointer
 reset:
@@ -30,13 +30,36 @@ reset:
     LDA #%00000010              ; Return home
     JSR lcd_send_cmd
 
+    LDA #%00000001              ; Clear screen
+    JSR lcd_send_cmd
+
 receive_loop:
     LDA UART_REG_STATUS
     AND #UART_STATUS_RXEMPTY
     BNE receive_loop
     ;; There is at least one received byte to read
     LDA UART_REG_RXDATA
+
+    CMP #$0d                    ; CR
+    BNE printable_test
+
+cr_received:
+    ;; switch line
+    LDA DPY_REG_CMD             ; Load CMD register
+    CLC
+    ADC #%01000000              ; toggle msb of addr
+    ORA #%10000000              ; set msb of to convert to command
+    JSR lcd_send_cmd
+    BRA receive_loop
+
+printable_test:
+    CMP #$20                    ; space
+    BCC receive_loop            ; < space
+    CMP #$7e                    ; ~
+    BCS receive_loop            ; >= ~
+
     ;; print it
+char_received:
     JSR lcd_send_byte
     ;; restart
     BRA receive_loop
