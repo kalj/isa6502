@@ -62,6 +62,17 @@ ISA = {
     0x52:("EOR","(zp)"),
     0x51:("EOR","(zp),y"),
 
+    # ORA
+    0x0d:("ORA","a"),
+    0x1d:("ORA","a,x"),
+    0x19:("ORA","a,y"),
+    0x09:("ORA","#"),
+    0x05:("ORA","zp"),
+    0x01:("ORA","(zp,x)"),
+    0x15:("ORA","zp,x"),
+    0x12:("ORA","(zp)"),
+    0x11:("ORA","(zp),y"),
+
     # AND
     0x2d:("AND","a"),
     0x3d:("AND","a,x"),
@@ -72,6 +83,13 @@ ISA = {
     0x35:("AND","zp,x"),
     0x32:("AND","(zp)"),
     0x31:("AND","(zp),y"),
+
+    # BIT
+    0x2c:("BIT","a"),
+    0x3c:("BIT","a,x"),
+    0x89:("BIT","#"),
+    0x24:("BIT","zp"),
+    0x34:("BIT","zp,x"),
 
     # INC
     0x1a:("INC","A"),
