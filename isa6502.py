@@ -180,6 +180,20 @@ ISA = {
     0x46:("LSR","zp"),
     0x56:("LSR","zp,x"),
 
+    # Rotate left
+    0x2e:("ROL","a"),
+    0x3e:("ROL","a,x"),
+    0x2A:("ROL","A"),
+    0x26:("ROL","zp"),
+    0x36:("ROL","zp,x"),
+
+    # Rotate right
+    0x6e:("ROR","a"),
+    0x7e:("ROR","a,x"),
+    0x6A:("ROR","A"),
+    0x66:("ROR","zp"),
+    0x76:("ROR","zp,x"),
+
     # Transfers
     0xba:("TSX","i"),
     0x9a:("TXS","i"),
