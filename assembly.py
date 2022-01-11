@@ -271,9 +271,11 @@ def preprocess(src_in):
 # Parse statements (instructions and data directives)
 # ===================================================================
 
+local_label_prefix='@'
+
 def parse_parameter(param):
 
-    label_regex = '^[a-zA-Z_]\w*$'
+    label_regex = '^'+local_label_prefix+'?[a-zA-Z_]\w*$'
 
     if re.match(label_regex,param):
         # Found a label. Implies a 2-byte address, i.e. "a". Just
@@ -343,7 +345,7 @@ def parse_argument(arg):
     # raise SyntaxError(f"Invalid operand string: {arg}")
 
 
-def parse_instruction(source_line):
+def parse_instruction(source_line, current_nonlocal_label):
     mnemonic = source_line[0:3].upper()
     arg_fmt, param = parse_argument(source_line[3:].strip())
 
@@ -352,6 +354,8 @@ def parse_instruction(source_line):
     if type(param) == str:
         # param is a label
         label=param
+        if label[0] == local_label_prefix:
+            label = current_nonlocal_label+label
 
         return Instruction(opcode,None,label)
     else:
@@ -390,7 +394,7 @@ def parse_string(s):
        raise SyntaxError("Failed encoding ascii string")
 
 
-def parse_statement(line):
+def parse_statement(line, current_nonlocal_label):
 
     if line.startswith(".byte "):
         args = [ a.strip() for a in line[5:].split(",")]
@@ -406,18 +410,19 @@ def parse_statement(line):
         bytez = parse_string(line[7:].strip())
         return Data(bytez+b'\0') # append null byte
     else:
-        return parse_instruction(line)
+        return parse_instruction(line, current_nonlocal_label)
 
 
 def parse_lines(source):
 
     statements = []
 
-    label_regex='^([a-zA-Z_]\w*):(.*)$'
+    label_regex='^('+local_label_prefix+'?[a-zA-Z_]\w*):(.*)$'
 
     labels={}
     current_labels = []
     src_out = []
+    current_nonlocal_label = None
 
     for line,linum in source:
 
@@ -433,6 +438,11 @@ def parse_lines(source):
         if current_labels:
             for l,ln in current_labels:
 
+                if l[0] == local_label_prefix:
+                    l = current_nonlocal_label+l
+                else:
+                    current_nonlocal_label = l
+
                 if l in labels:
                     label_linum=labels[l]['linum']
                     e = SyntaxError(f"Duplicate label '{l}', first label at {label_linum}")
@@ -442,7 +452,7 @@ def parse_lines(source):
             current_labels = []
 
         try:
-            s = parse_statement(line)
+            s = parse_statement(line, current_nonlocal_label)
             statements.append(s)
         except SyntaxError as e:
             e.set_linum(linum)

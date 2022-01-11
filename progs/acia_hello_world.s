@@ -19,12 +19,11 @@ reset:
 print_loop:
     LDA hello_str,X
     CMP #$00
-    BEQ the_end
+    BEQ print_done
     JSR acia_send_byte
     INX
     BRA print_loop
-
-the_end:
+print_done:
 
     LDX #100
     JSR sleep10ms
@@ -37,18 +36,16 @@ the_end:
 acia_wait:
     PHY
     PHX
-delay_loop:
     LDY #1
-minidly:
+@minidly:
     LDX #$68
-delay_1:
+@delay_1:
     DEX
-    BNE delay_1
+    BNE @delay_1
     DEY
-    BNE minidly
+    BNE @minidly
     PLX
     PLY
-delay_done:
     RTS
 
 acia_send_byte:
@@ -58,8 +55,7 @@ acia_send_byte:
 
 sleep10ms:
     LDY #$ff
-
-sleep10ms_2:
+@do_nops:
     NOP
     NOP
     NOP
@@ -78,7 +74,7 @@ sleep10ms_2:
     NOP
     NOP
     DEY
-    BNE sleep10ms_2
+    BNE @do_nops
 
     DEX
     BNE sleep10ms
