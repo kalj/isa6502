@@ -362,7 +362,7 @@ def parse_instruction(source_line, current_nonlocal_label):
         return Instruction(opcode,param,None)
 
 
-def parse_byte(s):
+def parse_constant(s):
     try:
         if s[0] == "$":
             v = int(s[1:],16)
@@ -371,13 +371,28 @@ def parse_byte(s):
         else:
             v = int(s)
     except:
-        raise SyntaxError(f"Invalid byte token: {s}")
+        raise SyntaxError(f"Invalid constant token: {s}")
+
+    return v
+
+
+def parse_byte(s):
+    v = parse_constant(s)
 
     if v > 255 or v<-128:
         raise SyntaxError(f"Integer value of token out of 8-bit range: {s}")
 
     # convert to unsigned
     v = (v+256) % 256
+
+    return v
+
+
+def parse_word(s):
+    v = parse_constant(s)
+
+    if v >= (1<<16) or v<0:
+        raise SyntaxError(f"Word/address token does not fit in an unsigned 16-bit value: {s}")
 
     return v
 
@@ -397,9 +412,16 @@ def parse_string(s):
 def parse_statement(line, current_nonlocal_label):
 
     if line.startswith(".byte "):
-        args = [ a.strip() for a in line[5:].split(",")]
-        bytez = bytes([parse_byte(a) for a in args])
-        return Data(bytez)
+        bytez = [parse_byte(a.strip()) for a in line[5:].split(",")]
+        return Data(bytes(bytez))
+
+    elif line.startswith(".word ") or line.startswith(".address "):
+        bstr=line[line.find(' '):]
+        bytez = []
+        for w in bstr.split(","):
+            word = parse_word(w.strip())
+            bytez.extend([word & 0xff, (word >>8) & 0xff])
+        return Data(bytes(bytez))
 
     elif line.startswith(".ascii "):
         # ascii string
@@ -412,6 +434,9 @@ def parse_statement(line, current_nonlocal_label):
     else:
         return parse_instruction(line, current_nonlocal_label)
 
+# ===================================================================
+# Assembly functions
+# ===================================================================
 
 def parse_lines(source):
 
