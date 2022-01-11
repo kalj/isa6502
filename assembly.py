@@ -7,6 +7,17 @@ import re
 import ast
 import operator as op
 
+class SyntaxError(Exception):
+    def __init__(self,message, linum=None):
+        super().__init__(message)
+        self._linum = linum
+
+    def set_linum(self,linum):
+        self._linum = linum
+
+    def get_linum(self):
+        return self._linum
+
 def u8_to_s8(u8val):
     return (u8val+128)%256-128
 
@@ -152,17 +163,6 @@ class Data:
     def encode(self):
         return self._bytes
 
-
-class SyntaxError(Exception):
-    def __init__(self,message):
-        super().__init__(message)
-        self._linum = None
-
-    def set_linum(self,linum):
-        self._linum = linum
-
-    def get_linum(self):
-        return self._linum
 
 #====================================================================
 # Simple mathematical expression parser and evaluator
@@ -434,6 +434,7 @@ def parse_statement(line, current_nonlocal_label):
     else:
         return parse_instruction(line, current_nonlocal_label)
 
+
 # ===================================================================
 # Assembly functions
 # ===================================================================
@@ -464,15 +465,17 @@ def parse_lines(source):
             for l,ln in current_labels:
 
                 if l[0] == local_label_prefix:
+                    if current_nonlocal_label is None:
+                        raise SyntaxError(f"Local label '{l}' with no preceeding non-local label", ln)
+
                     l = current_nonlocal_label+l
                 else:
                     current_nonlocal_label = l
 
                 if l in labels:
                     label_linum=labels[l]['linum']
-                    e = SyntaxError(f"Duplicate label '{l}', first label at {label_linum}")
-                    e.set_linum(ln)
-                    raise e
+                    raise SyntaxError(f"Duplicate label '{l}', first label at {label_linum}",ln)
+
                 labels[l] = {'idx':len(statements), 'linum':ln}
             current_labels = []
 
@@ -484,9 +487,8 @@ def parse_lines(source):
             raise e
 
     if current_labels:
-        e = SyntaxError("Label at end of file")
-        e.set_linum(source[-1][1])
-        raise e
+        label_linum = source[-1][1]
+        raise SyntaxError("Label at end of file", label_linum)
 
     labels = { k:v['idx'] for k,v in labels.items() }
 
