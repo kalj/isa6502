@@ -2,51 +2,47 @@
 #
 #
 
-import isa6502
+from assembly import disassemble, Instruction
 import argparse
 import sys
 
-def disassemble(prog):
-    instructions = []
-    bytesize = len(prog)
-    bytenum=0
-    while bytenum < bytesize:
-        instr = isa6502.decode_instruction(prog[bytenum:])
-        instr_size = instr.size()
-        instr_bytes = prog[bytenum:(bytenum+instr_size)]
-        instructions.append((bytenum,instr_bytes,instr))
-        bytenum += instr_size
-    return instructions
-
-def format_source(instructions, base_address):
+def format_source(statements, base_address):
     source = []
     next_label_id = 1
     labels = []
-    for offset,instr_bytes,instr in instructions:
-        instr_size = instr.size()
+    for offset,statement_bytes,statement in statements:
         address = base_address+offset
-        bytes_str = " ".join(["{:02x}".format(b) for b in instr_bytes])
-        source_line = "{:04x}  {:8s}  {}".format(address,bytes_str,instr)
-        if instr.get_addrmode() == "r":
-            branch_offset = instr._operand
-            if branch_offset > 127:
-                branch_offset -= 256
-            source_line = "{:28} ; ${:04x}".format(source_line,address+instr_size+branch_offset)
-        if instr.get_mnemonic() in ["JSR", "JMP"]:
-            target_addr = instr._operand
-            label = "sub_{:04d}".format(next_label_id)
-            next_label_id += 1
-            labels.append((label,target_addr))
-            source_line = "{:04x}  {:8s}  {} {}".format(address,bytes_str,instr.get_mnemonic(),label)
+        if isinstance(statement,Instruction):
+            instr = statement
+            instr_size = instr.size()
+            bytes_str = " ".join([f"{b:02x}" for b in statement_bytes])
+            source_line = f"{address:04x}  {bytes_str:8s}  {statement}"
+            if instr.get_addrmode() == "r":
+                branch_offset = instr._operand
+                if branch_offset > 127:
+                    branch_offset -= 256
+                source_line = "{:28} ; ${:04x}".format(source_line,address+instr_size+branch_offset)
+            if instr.get_mnemonic() in ["JSR", "JMP"]:
+                target_addr = instr._operand
+                label = f"sub_{next_label_id:04d}"
+                next_label_id += 1
+                labels.append((label,target_addr))
+                source_line = "{:04x}  {:8s}  {} {}".format(address,bytes_str,instr.get_mnemonic(),label)
 
-        source.append(source_line)
+            source.append(source_line)
+        else:
+            # data directive
+            for i,b in enumerate(statement_bytes):
+                byte_addr = address+i
+                byte_str  = f"{b:02x}"
+                source.append(f"{byte_addr:04x}  {byte_str:8s}  .byte {byte_str}")
 
     for lbl,addr in labels:
-        addrstr="{:04x}".format(addr)
+        addrstr=f"{addr:04x}"
         lines = [line for line in source if line.startswith(addrstr)]
         assert len(lines) == 1
         i = source.index(lines[0])
-        source.insert(i,"{}:".format(lbl))
+        source.insert(i,f"{lbl}:")
 
     return source
 
@@ -72,9 +68,9 @@ if __name__ == "__main__":
     else:
         prog = open(args.input,"rb").read()
 
-    instructions = disassemble(prog)
+    statements = disassemble(prog)
 
-    source = format_source(instructions,base_address)
+    source = format_source(statements,base_address)
 
     for l in source:
         print(l)
