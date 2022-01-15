@@ -3,8 +3,9 @@
 #define ACIA_REG_COMMAND $8102
 #define ACIA_REG_CONTROL $8103
 
-    ;; Reset stack pointer
+.org $9000
 reset:
+    ;; Reset stack pointer
     LDX #$ff
     TXS
 
@@ -82,3 +83,7 @@ sleep10ms:
 
 hello_str:
     .asciiz "Hello World!\n"
+
+.org $fffc
+.word reset
+.word $0000

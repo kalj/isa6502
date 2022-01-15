@@ -40,7 +40,10 @@ def format_source(statements, base_address):
     for lbl,addr in labels:
         addrstr=f"{addr:04x}"
         lines = [line for line in source if line.startswith(addrstr)]
-        assert len(lines) == 1
+        if len(lines) == 0:
+            continue
+        elif len(lines) > 1:
+            raise RuntimeError(f'internal error for label {lbl}')
         i = source.index(lines[0])
         source.insert(i,f"{lbl}:")
 

@@ -95,12 +95,15 @@ def mnemonic_to_opcode(mnemonic):
 
     return matches[0]
 
+def word_to_bytes(word):
+    return [word & 0xff, (word >>8) & 0xff]
 
 class Instruction:
     def __init__(self,opcode,operand,label):
         self._opcode = opcode
         self._operand = operand
         self._label = label
+        self._address = None
 
     def __str__(self):
         operandstr = operand_to_str(self.get_addrmode(),self._operand)
@@ -125,16 +128,22 @@ class Instruction:
         if opsize == 1:
             bs.append(self._operand)
         elif opsize == 2:
-            bs.extend([self._operand & 0xff, (self._operand >>8) & 0xff])
+            bs.extend(word_to_bytes(self._operand))
         return bs
 
-    def resolve_label(self,label_addresses,my_address):
+    def set_address(self, my_address):
+        self._address = my_address
+
+    def resolve_labels(self,label_addresses):
+        if self._address is None:
+            raise RuntimeError('resolve_labels requires address to be set')
+
         if self._label:
             if self.get_addrmode() == "r":
                 # special case for program-counter-relative address mode
 
                 # pc is incremented before jump, add size of this instruction
-                pc_address = (my_address+self.size())
+                pc_address = (self._address+self.size())
 
                 if not self._label in label_addresses:
                     raise SyntaxError(f"Unknown label: {self._label}")
@@ -150,7 +159,7 @@ class Instruction:
                 self._operand = label_addresses[self._label]
 
 
-class Data:
+class ByteData:
     def __init__(self,bs):
         self._bytes = bs
 
@@ -160,8 +169,38 @@ class Data:
     def size(self):
         return len(self._bytes)
 
+    def set_address(self, my_address):
+        pass
+
     def encode(self):
         return self._bytes
+
+    def resolve_labels(self, label_addresses):
+        pass
+
+class WordData:
+    def __init__(self,ws):
+        self._words = ws
+
+    def __str__(self):
+        return ".words "+', '.join(f'${w:04x}' for w in self._words)
+
+    def size(self):
+        return len(self._words) * 2
+
+    def set_address(self, my_address):
+        pass
+
+    def encode(self):
+        bs = []
+        for w in self._words:
+            bs.extend(word_to_bytes(w))
+        return bs
+
+    def resolve_labels(self, label_addresses):
+        for i in range(len(self._words)):
+            if isinstance(self._words[i], str):
+                self._words[i] = label_addresses[self._words[i]]
 
 
 #====================================================================
@@ -389,6 +428,13 @@ def parse_byte(s):
 
 
 def parse_word(s):
+
+    label_regex = '^'+local_label_prefix+'?[a-zA-Z_]\w*$'
+
+    if re.match(label_regex,s):
+        # Found a label, return as is
+        return s
+
     v = parse_constant(s)
 
     if v >= (1<<16) or v<0:
@@ -409,39 +455,16 @@ def parse_string(s):
        raise SyntaxError("Failed encoding ascii string")
 
 
-def parse_statement(line, current_nonlocal_label):
-
-    if line.startswith(".byte "):
-        bytez = [parse_byte(a.strip()) for a in line[5:].split(",")]
-        return Data(bytes(bytez))
-
-    elif line.startswith(".word ") or line.startswith(".address "):
-        bstr=line[line.find(' '):]
-        bytez = []
-        for w in bstr.split(","):
-            word = parse_word(w.strip())
-            bytez.extend([word & 0xff, (word >>8) & 0xff])
-        return Data(bytes(bytez))
-
-    elif line.startswith(".ascii "):
-        # ascii string
-        bytez = parse_string(line[6:].strip())
-        return Data(bytez)
-    elif line.startswith(".asciiz "):
-         # null-terminated ascii string
-        bytez = parse_string(line[7:].strip())
-        return Data(bytez+b'\0') # append null byte
-    else:
-        return parse_instruction(line, current_nonlocal_label)
-
-
 # ===================================================================
 # Assembly functions
 # ===================================================================
 
 def parse_lines(source):
 
+    global_statement_count = 0
+    sections = []
     statements = []
+    base_address = 0;
 
     label_regex='^('+local_label_prefix+'?[a-zA-Z_]\w*):(.*)$'
 
@@ -457,82 +480,143 @@ def parse_lines(source):
             current_labels.append((m.group(1), linum))
             line = m.group(2).strip()
 
+
         if not line:
             # line was empty, i.e. there was nothin after the label
             continue
 
-        if current_labels:
-            for l,ln in current_labels:
-
-                if l[0] == local_label_prefix:
-                    if current_nonlocal_label is None:
-                        raise SyntaxError(f"Local label '{l}' with no preceeding non-local label", ln)
-
-                    l = current_nonlocal_label+l
-                else:
-                    current_nonlocal_label = l
-
-                if l in labels:
-                    label_linum=labels[l]['linum']
-                    raise SyntaxError(f"Duplicate label '{l}', first label at {label_linum}",ln)
-
-                labels[l] = {'idx':len(statements), 'linum':ln}
-            current_labels = []
-
         try:
-            s = parse_statement(line, current_nonlocal_label)
-            statements.append(s)
+            # Parse statement
+
+            if line.startswith(".org "):
+                arg = line[4:].strip()
+                org_address = parse_word(arg)
+
+                if len(statements) > 0:
+                    # save previous section
+                    sections.append({'base_address':base_address, 'statements':statements})
+
+                base_address = org_address
+                statements = []
+
+                s = None # no "statement"
+
+            elif line.startswith(".byte "):
+                bytez = [parse_byte(a.strip()) for a in line[5:].split(",")]
+                s = ByteData(bytes(bytez))
+
+            elif line.startswith(".word ") or line.startswith(".address "):
+                wstr=line[line.find(' '):]
+                words = []
+                for w in wstr.split(","):
+                    words.append(parse_word(w.strip()))
+                s = WordData(words)
+
+            elif line.startswith(".ascii "):
+                # ascii string
+                bytez = parse_string(line[6:].strip())
+                s = ByteData(bytez)
+            elif line.startswith(".asciiz "):
+                # null-terminated ascii string
+                bytez = parse_string(line[7:].strip())
+                s = ByteData(bytez+b'\0') # append null byte
+            else:
+                s = parse_instruction(line, current_nonlocal_label)
+
         except SyntaxError as e:
             e.set_linum(linum)
             raise e
+
+        if not s is None:
+            statements.append(s)
+
+            if current_labels:
+                for l,ln in current_labels:
+
+                    if l[0] == local_label_prefix:
+                        if current_nonlocal_label is None:
+                            raise SyntaxError(f"Local label '{l}' with no preceeding non-local label", ln)
+
+                        l = current_nonlocal_label+l
+                    else:
+                        current_nonlocal_label = l
+
+                    if l in labels:
+                        label_linum=labels[l]['linum']
+                        raise SyntaxError(f"Duplicate label '{l}', first label at {label_linum}",ln)
+
+                    labels[l] = {'global_statement_idx':global_statement_count, 'linum':ln}
+                current_labels = []
+
+            global_statement_count += 1
+
+    if len(statements) > 0:
+        # save last section if non-empty
+        sections.append({'base_address':base_address, 'statements':statements})
 
     if current_labels:
         label_linum = source[-1][1]
         raise SyntaxError("Label at end of file", label_linum)
 
-    labels = { k:v['idx'] for k,v in labels.items() }
+    # remove line numbers used for debugging
+    labels = { k:v['global_statement_idx'] for k,v in labels.items() }
 
-    return statements, labels
+    return sections, labels
 
 
-def resolve_labels(statements,labels,base_address):
+def resolve_labels(sections,labels):
 
-    byte_offset = base_address
     addresses = []
 
-    for stmt in statements:
-        addresses.append(byte_offset)
-        byte_offset += stmt.size()
+    for section in sections:
+        byte_offset = section['base_address']
+
+        for stmt in section['statements']:
+            addresses.append(byte_offset)
+            stmt.set_address(byte_offset)
+            byte_offset += stmt.size()
 
     label_addresses = {l:addresses[idx] for l,idx in labels.items()}
 
-    for stmt,addr in zip(statements,addresses):
+    for section in sections:
+        for stmt in section['statements']:
+            stmt.resolve_labels(label_addresses)
 
-        if isinstance(stmt,Instruction):
-            stmt.resolve_label(label_addresses,addr)
-
-    return statements
+    return sections
 
 
-def assemble(raw_source, base_address):
+def assemble(raw_source):
     # prune
     source_lines = prune(raw_source)
 
     source_lines = preprocess(source_lines)
 
     # Harvest labels & parse statements
-    statements, labels = parse_lines(source_lines)
+    sections, labels = parse_lines(source_lines)
 
-    statements = resolve_labels(statements,labels,base_address)
+    sections = resolve_labels(sections,labels)
 
-    return statements
+    return sections
 
-def encode_program(statements):
-    ops = []
-    for stmt in statements:
-        ops.extend(stmt.encode())
+def encode_program(sections):
+    prog_bytes = []
+    prog_start_offset = sections[0]['base_address']
+    for section in sections:
+        base_address=section['base_address']
+        offset_from_start = base_address - prog_start_offset
 
-    return bytes(ops)
+        gap_size = offset_from_start - len(prog_bytes)
+        if gap_size < 0:
+            # overlap between sections!
+            raise Exception(f"Section starting at {base_address} overlaps with previous section!")
+
+        # Fill any gap
+        prog_bytes.extend([0]*gap_size)
+
+        for stmt in section['statements']:
+            prog_bytes.extend(stmt.encode())
+
+    return bytes(prog_bytes)
 
 
 # ===================================================================

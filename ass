@@ -8,7 +8,7 @@ import argparse
 from assembly import assemble, encode_program, SyntaxError
 
 def auto_int(x):
-        return int(x, 0)
+    return int(x, 0)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='6502 Assembler')
@@ -19,14 +19,8 @@ if __name__ == '__main__':
     parser.add_argument('-o','--output',
                         default='a.out',
                         help='name of output file')
-    parser.add_argument('-b','--base-address',
-                        default=0x9000,
-                        type=auto_int,
-                        help='base address offset')
 
     args = parser.parse_args()
-
-    base_address = args.base_address
 
     inputfilename=args.input
     outputfilename=args.output
@@ -34,7 +28,7 @@ if __name__ == '__main__':
     raw_source = open(inputfilename,"r").readlines()
 
     try:
-        statements = assemble(raw_source, base_address)
+        sections = assemble(raw_source)
 
     except SyntaxError as e:
         linum = e.get_linum()
@@ -46,20 +40,28 @@ if __name__ == '__main__':
         sys.exit(1)
 
     if args.verbose:
-        addr = base_address
-        source = []
-        for s in statements:
-            instr_bytes = s.encode()
-            bytes_str = " ".join([f"{b:02x}" for b in instr_bytes])
-            source.append( (f"{addr:04x}",bytes_str,str(s)) )
-            addr += s.size()
-        widths = [max(len(s) for s in strs) for strs in zip(*source)]
-
         print("Parsed code:")
-        for line in source:
-            print("{}  {}  {}".format(line[0],line[1].ljust(widths[1]),line[2]))
 
-    prog = encode_program(statements)
+        first_section=True
+        for section in sections:
+            if first_section:
+                first_section = False
+            else:
+                print('...')
+
+            addr = section['base_address']
+            source = []
+            for s in section['statements']:
+                instr_bytes = s.encode()
+                bytes_str = " ".join([f"{b:02x}" for b in instr_bytes])
+                source.append( (f"{addr:04x}",bytes_str,str(s)) )
+                addr += s.size()
+            widths = [max(len(s) for s in strs) for strs in zip(*source)]
+
+            for line in source:
+                print("{}  {}  {}".format(line[0],line[1].ljust(widths[1]),line[2]))
+
+    prog = encode_program(sections)
 
     if outputfilename == '-':
         sys.stdout.buffer.write(prog)
