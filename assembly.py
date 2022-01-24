@@ -6,6 +6,7 @@ from isa6502 import ISA
 import re
 from lark import Lark, Transformer, v_args, Tree
 from lark.exceptions import VisitError
+import intelhex
 
 class SyntaxError(Exception):
     def __init__(self,message, linum=None):
@@ -83,7 +84,6 @@ def identify_opcode(mnemonic,argfmt):
 
     if len(matches) == 0:
         raise SyntaxError(f"Unknown instruction: {mnemonic} {argfmt}")
-
 
     return matches[0]
 
@@ -669,6 +669,14 @@ def program_sections_to_binary(prog_sections, binary_start_address, fillbyte=0):
     return bytes(binary)
 
 
+def program_sections_to_hex(prog_sections, hex_start_address):
+
+    ih = intelhex.IntelHex()
+
+    for section in prog_sections:
+        ih.puts(section['base_address']-hex_start_address, bytes(section['bytes']))
+
+    return ih
 
 
 # ===================================================================
