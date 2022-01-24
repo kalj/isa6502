@@ -4,8 +4,9 @@
 #define UART_STATUS_TXFULL  %00000001
 #define UART_STATUS_RXEMPTY %00000010
 
-    ;; Reset stack pointer
+.org $9000
 reset:
+    ;; Reset stack pointer
     LDX #$ff
     TXS
 

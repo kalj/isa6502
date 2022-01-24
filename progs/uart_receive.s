@@ -7,6 +7,7 @@
 #define DPY_REG_CMD  $8200
 #define DPY_REG_DATA $8201
 
+.org $9000
     ;; Reset stack pointer
 reset:
     LDX #$ff

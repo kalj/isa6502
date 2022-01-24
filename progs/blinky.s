@@ -4,6 +4,7 @@
 #define DDRB  $8002
 #define DDRA  $8003
 
+.org $9000
     ;; Reset stack pointer
 reset:
     LDX #$ff
@@ -19,14 +20,14 @@ blink_loop:
     STA PORTB
 
     LDX #10
-    JSR sleep200us
+    JSR sleep10ms
 
     LDA #$55
     STA PORTA
     STA PORTB
 
     LDX #10
-    JSR sleep200us
+    JSR sleep10ms
 
     BRA blink_loop
 
@@ -39,7 +40,7 @@ the_end:
 sleep10ms:
     LDY #$ff
 
-sleep10ms_2:
+@inner_loop:
     NOP
     NOP
     NOP
@@ -58,7 +59,7 @@ sleep10ms_2:
     NOP
     NOP
     DEY
-    BNE sleep10ms_2
+    BNE @inner_loop
 
     DEX
     BNE sleep10ms
