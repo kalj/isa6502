@@ -109,6 +109,8 @@ ISA = {
     0x90:("BCC","r"),
     0x80:("BRA","r"),
     0x30:("BMI","r"),
+    0x70:("BVS","r"),
+    0x10:("BPL","r"),
 
 
     # CMP
@@ -156,6 +158,13 @@ ISA = {
     0x84:("STY","zp"),
     0x94:("STY","zp,x"),
 
+
+    # STZ
+    0x9c:("STZ", "a"),
+    0x9e:("STZ", "a,x"),
+    0x64:("STZ", "zp"),
+    0x74:("STZ", "zp,x"),
+
     # INX
     0xe8:("INX","i"),
 
@@ -195,8 +204,13 @@ ISA = {
     0xba:("TSX","i"),
     0x9a:("TXS","i"),
     0x8a:("TXA","i"),
+    0xaa:("TAX","i"),
+    0xa8:("TAY","i"),
+    0x98:("TYA","i"),
 
     # Push & pop ("pull")
+    0x08:("PHP", "i"),
+    0x28:("PLP", "i"),
     0x48:("PHA", "i"),
     0x68:("PLA", "i"),
     0x5a:("PHY", "i"),
@@ -207,6 +221,11 @@ ISA = {
     # Jumps
     0x20:("JSR","a"),
     0x60:("RTS","i"),
+    0x40:("RTI","i"),
+
+    0x4c:("JMP","a"),
+    0x6c:("JMP","(a)"),
+    0x7c:("JMP","(a,x)"),
 
     # Clear flags
     0x18:("CLC", "i"),
@@ -218,5 +237,14 @@ ISA = {
     0x38:("SEC", "i"),
     0xf8:("SED", "i"),
     0x78:("SEI", "i"),
+
+    # Test-and-set
+    0x0c:("TSB", "a"),
+    0x04:("TSB", "zp"),
+
+    # invalid opcodes (NOP)
+    0xfb:("INV/XCE", "i"),
+    # 0xf4:("INV/PEA", "zp"),
+    # 0x82:("INV/BRL", "zp"),
 
     }
