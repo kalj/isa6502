@@ -24,10 +24,24 @@ def format_source(statements, base_address):
                 source_line = "{:28} ; ${:04x}".format(source_line,address+instr_size+branch_offset)
             if instr.get_mnemonic() in ["JSR", "JMP"]:
                 target_addr = instr._operand
-                label = f"sub_{next_label_id:04d}"
-                next_label_id += 1
-                labels.append((label,target_addr))
-                source_line = "{:04x}  {:8s}  {} {}".format(address,bytes_str,instr.get_mnemonic(),label)
+                label = None
+                for l,t in labels:
+                    if t == target_addr:
+                        label = l
+                if label is None:
+                    label = f"sub_{next_label_id:04d}"
+                    next_label_id += 1
+                    labels.append((label,target_addr))
+
+                if instr.get_addrmode() == 'a':
+                    argstr=label
+                elif instr.get_addrmode() == '(a)':
+                    argstr = '('+label+')'
+                elif  instr.get_addrmode() == '(a,X)':
+                    argstr = '('+label+',X)'
+                else:
+                    raise RuntimeError('invalid addressing mode for JSR/JMP')
+                source_line = "{:04x}  {:8s}  {} {}".format(address,bytes_str,instr.get_mnemonic(),argstr)
 
             source.append(source_line)
         else:
