@@ -603,24 +603,46 @@ def assemble(raw_source):
     return sections
 
 def encode_program(sections):
-    prog_bytes = []
-    prog_start_offset = sections[0]['base_address']
+    prog_sections = []
     for section in sections:
-        base_address=section['base_address']
-        offset_from_start = base_address - prog_start_offset
-
-        gap_size = offset_from_start - len(prog_bytes)
-        if gap_size < 0:
-            # overlap between sections!
-            raise Exception(f"Section starting at {base_address} overlaps with previous section!")
-
-        # Fill any gap
-        prog_bytes.extend([0]*gap_size)
-
+        prog_bytes = []
         for stmt in section['statements']:
             prog_bytes.extend(stmt.encode())
 
-    return bytes(prog_bytes)
+        prog_sections.append({'bytes':prog_bytes, 'base_address':section['base_address']})
+
+    prog_sections.sort(key=lambda s: s['base_address'])
+
+    for i in range(1,len(prog_sections)):
+        cur_sect = prog_sections[i]
+        prev_sect = prog_sections[i-1]
+
+        section_start = cur_sect['base_address']
+        prev_section_end = prev_sect['base_address']+len(prev_sect['bytes'])-1
+
+        if section_start <= prev_section_end:
+            raise Exception(f"Section starting at {section_start:x} overlaps with previous section ending at {prev_section_end:x}!")
+
+    return prog_sections
+
+
+def program_sections_to_binary(prog_sections, binary_start_address, fillbyte=0):
+    binary = []
+
+    prev_section_end = binary_start_address
+    for section in prog_sections:
+        section_start=section['base_address']
+        gap_size = section_start - prev_section_end
+
+        # Fill any gap
+        binary.extend([fillbyte]*gap_size)
+
+        binary.extend(section['bytes'])
+        prev_section_end = section_start + len(section['bytes'])
+
+    return bytes(binary)
+
+
 
 
 # ===================================================================

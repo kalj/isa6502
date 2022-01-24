@@ -5,7 +5,7 @@
 import sys
 from pathlib import Path
 import argparse
-from assembly import assemble, encode_program, SyntaxError
+from assembly import assemble, encode_program, program_sections_to_binary, SyntaxError
 
 def auto_int(x):
     return int(x, 0)
@@ -61,7 +61,9 @@ if __name__ == '__main__':
             for line in source:
                 print("{}  {}  {}".format(line[0],line[1].ljust(widths[1]),line[2]))
 
-    prog = encode_program(sections)
+    prog_sections = encode_program(sections)
+
+    prog = program_sections_to_binary(prog_sections, 0x9000, fillbyte=0xff)
 
     if outputfilename == '-':
         sys.stdout.buffer.write(prog)
