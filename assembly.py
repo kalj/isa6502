@@ -4,8 +4,8 @@
 
 from isa6502 import ISA
 import re
-import ast
-import operator as op
+from lark import Lark, Transformer, v_args, Tree
+from lark.exceptions import VisitError
 
 class SyntaxError(Exception):
     def __init__(self,message, linum=None):
@@ -71,24 +71,19 @@ def identify_opcode(mnemonic,argfmt):
         raise SyntaxError(f"Unknown instruction mnemonic: {mnemonic}")
 
     # try to match address mode
+    possible_modes = [argfmt]
 
-    if 'lbl' in argfmt:
-        # we have a label (and only a label)
-        matches = [o for o,i in mnematches if i[1] in [argfmt.replace("lbl","r"), argfmt.replace("lbl","a")]]
-    elif 'zp' in argfmt:
-        matches = [o for o,i in mnematches if i[1]==argfmt]
-        if len(matches) == 0:
-            matches = [o for o,i in mnematches if i[1]==argfmt.replace("zp","a")]
-    else:
-        matches = [o for o,i in mnematches if i[1]==argfmt]
+    if 'zp' in argfmt:
+        possible_modes.append(argfmt.replace("zp","a"))
+
+    if "zp" in possible_modes or "a" in possible_modes:
+        possible_modes.append("r")
+
+    matches = [o  for m in possible_modes for o,i in mnematches if i[1] == m]
 
     if len(matches) == 0:
         raise SyntaxError(f"Unknown instruction: {mnemonic} {argfmt}")
 
-    if len(matches)>1:
-        raise Exception(f'Internal error, multiple instructions matched {mnemonic} {addrfmt}')
-        # unknown instruction
-        # return 0x00
 
     return matches[0]
 
@@ -103,11 +98,17 @@ def word_to_bytes(word):
     return [word & 0xff, (word >>8) & 0xff]
 
 class Instruction:
-    def __init__(self,opcode,operand,label):
+    def __init__(self,opcode,operand, linum, current_nonlocal_label):
         self._opcode = opcode
-        self._operand = operand
-        self._label = label
         self._address = None
+        self._linum = linum
+
+        if isinstance(operand, Tree):
+            for label_tok in operand.scan_values(lambda v: v.type == 'LABEL'):
+                if label_tok.value[0] == '@':
+                    label_tok.value = current_nonlocal_label+label_tok.value
+
+        self._operand = operand
 
     def __str__(self):
         operandstr = operand_to_str(self.get_addrmode(),self._operand)
@@ -142,25 +143,27 @@ class Instruction:
         if self._address is None:
             raise RuntimeError('resolve_labels requires address to be set')
 
-        if self._label:
-            if self.get_addrmode() == "r":
-                # special case for program-counter-relative address mode
+        if isinstance(self._operand, Tree):
+            try:
+                self._operand = evaluate_expression(self._operand, label_addresses)
+            except SyntaxError as e:
+                e.set_linum(self._linum)
+                raise e
 
-                # pc is incremented before jump, add size of this instruction
-                pc_address = (self._address+self.size())
+        if self.get_addrmode() == "r":
+            # special case for program-counter-relative address mode
 
-                if not self._label in label_addresses:
-                    raise SyntaxError(f"Unknown label: {self._label}")
-                branch_offset = label_addresses[self._label] - pc_address
+            # pc is incremented before jump, add size of this instruction
+            pc_address = (self._address+self.size())
 
-                if branch_offset > 127 or branch_offset < -128:
-                    raise SyntaxError("Out of range branch (branches are limited to -128 to +127)")
+            branch_offset = self._operand - pc_address
 
-                branch_offset = (branch_offset+256) % 256 # convert to unsigned
+            if branch_offset > 127 or branch_offset < -128:
+                raise SyntaxError("Out of range branch (branches are limited to -128 to +127)", self._linum)
 
-                self._operand = branch_offset
-            else:
-                self._operand = label_addresses[self._label]
+            branch_offset = (branch_offset+256) % 256 # convert to unsigned
+
+            self._operand = branch_offset
 
 
 class ByteData:
@@ -203,48 +206,98 @@ class WordData:
 
     def resolve_labels(self, label_addresses):
         for i in range(len(self._words)):
-            if isinstance(self._words[i], str):
-                self._words[i] = label_addresses[self._words[i]]
+            self._words[i] = evaluate_expression(self._words[i], label_addresses)
 
 
 #====================================================================
 # Simple mathematical expression parser and evaluator
 #====================================================================
 
-# supported operators
-operators = {ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul,
-             ast.Div: op.truediv, ast.Pow: op.pow, ast.BitXor: op.xor,
-             ast.BitAnd: op.and_, ast.BitOr: op.or_, ast.Invert: op.invert,
-             ast.USub: op.neg}
+calc_grammar = """
+    ?start: sum
 
-def eval_(node):
-    if isinstance(node, ast.Num): # <number>
-        return node.n
-    elif isinstance(node, ast.Name): # <variable>
-       if not node.id in variables:
-           raise SyntaxError(f"unknown variable in expression: {node.id}")
-       return variables[node.id]
-    elif isinstance(node, ast.BinOp): # <left> <operator> <right>
-        return operators[type(node.op)](eval_(node.left), eval_(node.right))
-    elif isinstance(node, ast.UnaryOp): # <operator> <operand> e.g., -1
-        return operators[type(node.op)](eval_(node.operand))
-    else:
-        raise TypeError(node)
+    ?sum: product
+        | sum "+" product   -> add
+        | sum "-" product   -> sub
 
-def evaluate_constant_expression(expr):
-    # replace hexadecimal (prefix $), and binary (prefix %) literals
-    # which are incompatible with expected python syntax of ast
-    while m := re.search("\$[0-9ABCDEFabcdef]+",expr):
-        oldlit = m.group(0)
-        newlit = str(int(oldlit[1:],16))
-        expr = expr.replace(oldlit, newlit)
+    ?product: atom
+        | product "*" atom  -> mul
+        | product "/" atom  -> div
+        | product "|" atom  -> or_
+        | product "&" atom  -> and_
+        | product "<<" atom  -> lshift
+        | product ">>" atom  -> rshift
 
-    while m := re.search("%[01]+",expr):
-        oldlit = m.group(0)
-        newlit = str(int(oldlit[1:],2))
-        expr = expr.replace(oldlit, newlit)
+    ?atom: NUMBER           -> number
+         | "-" atom         -> neg
+         | ">" atom         -> hi_byte
+         | "<" atom         -> lo_byte
+         | "~" atom         -> inv
+         | LABEL            -> label
+         | "(" sum ")"
 
-    return eval_(ast.parse(expr, mode='eval').body)
+    LABEL: NAME | "@" NAME
+    DIGIT: "0".."9"
+    HEXDIGIT: "a".."f"|"A".."F"|DIGIT
+    BINDIGIT: "0".."1"
+    NUMBER: DIGIT+ | "$" HEXDIGIT+ | "%" BINDIGIT+
+
+    %import common.CNAME -> NAME
+    %import common.WS_INLINE
+
+    %ignore WS_INLINE
+"""
+parser  = Lark(calc_grammar, parser='lalr')
+
+@v_args(inline=True)    # Affects the signatures of the methods
+class CalculateTree(Transformer):
+    from operator import add, sub, mul, floordiv as div, neg, lshift, rshift, inv, or_, and_
+
+    def __init__(self, labels):
+        self._labels = labels
+
+    def number(self, v):
+        if v[0] == '$':
+            return int(v[1:],16)
+        elif v[0] == '%':
+            return int(v[1:],2)
+        else:
+            return int(v)
+
+    def label(self, name):
+        try:
+            return self._labels[name.value]
+        except KeyError:
+            raise SyntaxError(f"label {name.value} not defined")
+
+    def hi_byte(self, v):
+        return (v >> 8) & 0xff
+
+    def lo_byte(self, v):
+        return v & 0xff
+
+def parse_expression(expr):
+    return parser.parse(expr)
+
+def evaluate_expression(expr_tree, labels):
+    evaluator = CalculateTree(labels)
+    try:
+        return evaluator.transform(expr_tree)
+    except VisitError as e:
+        raise e.orig_exc
+
+def expression_size(expr_tree):
+    try:
+        value = evaluate_expression(expr_tree, {})
+        if value > 255:
+            return 2
+        else:
+            return 1
+    except:
+        if expr_tree.data in ['lo_byte', 'hi_byte']:
+            return 1
+        else:
+            return 2
 
 # ===================================================================
 # prune
@@ -318,22 +371,16 @@ local_label_prefix='@'
 
 def parse_parameter(param):
 
-    label_regex = '^'+local_label_prefix+'?[a-zA-Z_]\w*$'
+    tree = parse_expression(param)
 
-    if re.match(label_regex,param):
-        # Found a label. Implies a 2-byte address, i.e. "a". Just
-        # return the label, the address will be resolved later.
-        return "lbl",param
+    # check size of result
+    if expression_size(tree) == 1:
+        param_type = "zp"
     else:
-        try:
-            val = evaluate_constant_expression(param)
-        except:
-            raise SyntaxError(f"Failed parsing parameter expression: {param}")
+        param_type = "a"
 
-        if val > 255:
-            return "a",val
-        else:
-            return "zp",val
+    return param_type, tree
+
 
 def parse_argument(arg):
 
@@ -380,29 +427,19 @@ def parse_argument(arg):
         return f"{param_type},{offset}",val
 
     # else:
-    # match label or expression)
+    # match label or expression
     param_type,val = parse_parameter(arg)
     return param_type,val
 
-    # # default - Invalid addressing mode
-    # raise SyntaxError(f"Invalid operand string: {arg}")
 
-
-def parse_instruction(source_line, current_nonlocal_label):
-    mnemonic = source_line[0:3].upper()
-    arg_fmt, param = parse_argument(source_line[3:].strip())
+def parse_instruction(source_line, linum, current_nonlocal_label):
+    mnemonic = source_line.split()[0].upper()
+    mnemonic_len = len(mnemonic)
+    arg_fmt, param = parse_argument(source_line[mnemonic_len:].strip())
 
     opcode = identify_opcode(mnemonic,arg_fmt)
 
-    if type(param) == str:
-        # param is a label
-        label=param
-        if label[0] == local_label_prefix:
-            label = current_nonlocal_label+label
-
-        return Instruction(opcode,None,label)
-    else:
-        return Instruction(opcode,param,None)
+    return Instruction(opcode, param, linum, current_nonlocal_label)
 
 
 def parse_constant(s):
@@ -433,18 +470,7 @@ def parse_byte(s):
 
 def parse_word(s):
 
-    label_regex = '^'+local_label_prefix+'?[a-zA-Z_]\w*$'
-
-    if re.match(label_regex,s):
-        # Found a label, return as is
-        return s
-
-    v = parse_constant(s)
-
-    if v >= (1<<16) or v<0:
-        raise SyntaxError(f"Word/address token does not fit in an unsigned 16-bit value: {s}")
-
-    return v
+    return parse_expression(s)
 
 
 def parse_string(s):
@@ -481,9 +507,17 @@ def parse_lines(source):
 
         m = re.match(label_regex,line)
         if m:
-            current_labels.append((m.group(1), linum))
-            line = m.group(2).strip()
+            lbl = m.group(1)
 
+            if lbl[0] == local_label_prefix:
+                if current_nonlocal_label is None:
+                    raise SyntaxError(f"Local label '{lbl}' with no preceeding non-local label", linum)
+                lbl = current_nonlocal_label+lbl
+            else:
+                current_nonlocal_label = lbl
+
+            current_labels.append((lbl, linum))
+            line = m.group(2).strip()
 
         if not line:
             # line was empty, i.e. there was nothin after the label
@@ -494,7 +528,8 @@ def parse_lines(source):
 
             if line.startswith(".org "):
                 arg = line[4:].strip()
-                org_address = parse_word(arg)
+                expr = parse_expression(arg)
+                org_address = evaluate_expression(expr,{})
 
                 if len(statements) > 0:
                     # save previous section
@@ -525,7 +560,7 @@ def parse_lines(source):
                 bytez = parse_string(line[7:].strip())
                 s = ByteData(bytez+b'\0') # append null byte
             else:
-                s = parse_instruction(line, current_nonlocal_label)
+                s = parse_instruction(line, linum, current_nonlocal_label)
 
         except SyntaxError as e:
             e.set_linum(linum)
@@ -536,15 +571,6 @@ def parse_lines(source):
 
             if current_labels:
                 for l,ln in current_labels:
-
-                    if l[0] == local_label_prefix:
-                        if current_nonlocal_label is None:
-                            raise SyntaxError(f"Local label '{l}' with no preceeding non-local label", ln)
-
-                        l = current_nonlocal_label+l
-                    else:
-                        current_nonlocal_label = l
-
                     if l in labels:
                         label_linum=labels[l]['linum']
                         raise SyntaxError(f"Duplicate label '{l}', first label at {label_linum}",ln)
@@ -664,7 +690,7 @@ def decode_instruction(bytes_in):
     addrmode = ISA[opcode][1]
     operand_bytes = bytes_in[1:1+operand_size(addrmode)]
     operand = decode_operand(operand_bytes)
-    return Instruction(opcode,operand,None)
+    return Instruction(opcode,operand,None,None)
 
 def disassemble(prog):
     statements = []
