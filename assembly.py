@@ -75,6 +75,10 @@ def identify_opcode(mnemonic,argfmt):
     if 'lbl' in argfmt:
         # we have a label (and only a label)
         matches = [o for o,i in mnematches if i[1] in [argfmt.replace("lbl","r"), argfmt.replace("lbl","a")]]
+    elif 'zp' in argfmt:
+        matches = [o for o,i in mnematches if i[1]==argfmt]
+        if len(matches) == 0:
+            matches = [o for o,i in mnematches if i[1]==argfmt.replace("zp","a")]
     else:
         matches = [o for o,i in mnematches if i[1]==argfmt]
 
