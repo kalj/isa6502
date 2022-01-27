@@ -7,6 +7,7 @@ import re
 from lark import Lark, Transformer, v_args, Tree
 from lark.exceptions import VisitError
 import intelhex
+import io
 
 class SyntaxError(Exception):
     def __init__(self,message, linum=None):
@@ -676,7 +677,12 @@ def program_sections_to_hex(prog_sections, hex_start_address):
     for section in prog_sections:
         ih.puts(section['base_address']-hex_start_address, bytes(section['bytes']))
 
-    return ih
+    sio = io.StringIO()
+    ih.write_hex_file(sio)
+    contents = sio.getvalue()
+    sio.close()
+
+    return contents.encode()
 
 
 # ===================================================================

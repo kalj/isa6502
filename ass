@@ -5,10 +5,7 @@
 import sys
 from pathlib import Path
 import argparse
-from assembly import assemble, encode_program, program_sections_to_binary, SyntaxError
-
-def auto_int(x):
-    return int(x, 0)
+from assembly import *
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='6502 Assembler')
@@ -17,15 +14,83 @@ if __name__ == '__main__':
                         action='store_true',
                         help='enable verbose output')
     parser.add_argument('-o','--output',
-                        default='a.out',
                         help='name of output file')
+    parser.add_argument('-f', '--format', choices=['hex', 'bin'], help='output format to use')
+
+    # options for .bin
+    parser.add_argument('-s', '--start-address', help='Address to start outputting from (0x8000 by default)')
+    parser.add_argument('-g', '--gap-byte', help='Byte value to use to fill gap regions (0xff by default)')
+
+    # options for .hex
+    parser.add_argument('-b', '--base-address', help='Address base for hex section offsets (0x8000 by default)')
 
     args = parser.parse_args()
 
-    inputfilename=args.input
-    outputfilename=args.output
+    #----------------------------------------------------------------
+    # Determine format
+    #----------------------------------------------------------------
 
-    raw_source = open(inputfilename,"r").readlines()
+    fmt = 'hex' # default
+
+    # if an actual (not '-') filename is given, suffix decides
+    if args.output and args.output != '-':
+        suf = Path(args.output).suffix
+        if suf in ['hex','bin']:
+            fmt = suf
+
+    # format arg overrides if given
+    if args.format:
+        fmt = args.format
+
+    #------------------------------------------------------------
+    # options for output format
+    #------------------------------------------------------------
+    if fmt == 'hex':
+        hex_base = 0x8000
+        if args.base_address is not None:
+            hex_base = int(args.base_address, 0)
+
+        # invalid args
+        if args.start_address is not None:
+            raise RuntimeError('Flag --start-address is not valid for hex output, did you mean --base-address ?')
+
+        if args.gap_byte is not None:
+            raise RuntimeError('Flag --gap-byte is not valid for hex output')
+
+    if fmt == 'bin':
+        gap_byte = 0xff
+        if args.gap_byte is not None:
+            gap_byte = int(args.gap_byte, 0)
+
+        start_address = 0x8000
+        if args.start_address is not None:
+            start_address = int(args.start_address, 0)
+
+        # invalid args
+        if args.base_addres is not None:
+            raise RuntimeError('Flag --base-address is not valid for bin output, did you mean --start-address ?')
+
+
+    input_path=Path(args.input)
+    if not input_path.exists():
+        raise RuntimeError(f'Input file does not exist: {input_path}')
+
+    #------------------------------------------------------------
+    # determine output filename
+    #------------------------------------------------------------
+
+    # by default, use input filename with fmt as suffix
+    outputfilename=str(input_path.with_suffix(f'.{fmt}'))
+
+    # naturally, --output overrides
+    if args.output:
+        outputfilename=args.output
+
+    #------------------------------------------------------------
+    # Read input
+    #------------------------------------------------------------
+    with open(input_path,"r") as f:
+        raw_source = f.readlines()
 
     try:
         sections = assemble(raw_source)
@@ -63,10 +128,14 @@ if __name__ == '__main__':
 
     prog_sections = encode_program(sections)
 
-    prog = program_sections_to_binary(prog_sections, 0x9000, fillbyte=0xff)
+    if fmt == 'hex':
+        output_bytes = program_sections_to_hex(prog_sections, hex_base)
+    else:
+        output_bytes = program_sections_to_binary(prog_sections, start_address, fillbyte=gap_byte)
+
 
     if outputfilename == '-':
-        sys.stdout.buffer.write(prog)
+        sys.stdout.buffer.write(output_bytes)
     else:
         out_path = Path(outputfilename)
-        out_path.write_bytes(prog)
+        out_path.write_bytes(output_bytes)
