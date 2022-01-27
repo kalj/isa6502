@@ -35,8 +35,8 @@ if __name__ == '__main__':
     # if an actual (not '-') filename is given, suffix decides
     if args.output and args.output != '-':
         suf = Path(args.output).suffix
-        if suf in ['hex','bin']:
-            fmt = suf
+        if suf in ['.hex','.bin']:
+            fmt = suf[1:]
 
     # format arg overrides if given
     if args.format:
@@ -67,7 +67,7 @@ if __name__ == '__main__':
             start_address = int(args.start_address, 0)
 
         # invalid args
-        if args.base_addres is not None:
+        if args.base_address is not None:
             raise RuntimeError('Flag --base-address is not valid for bin output, did you mean --start-address ?')
 
 
