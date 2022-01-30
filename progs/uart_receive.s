@@ -8,8 +8,9 @@
 #define DPY_REG_DATA $8201
 
 .org $9000
-    ;; Reset stack pointer
+
 reset:
+    ;; Reset stack pointer
     LDX #$ff
     TXS
 
@@ -42,19 +43,19 @@ receive_loop:
     LDA UART_REG_RXDATA
 
     ;; BS/DEL received?
-    CMP #$08
+    CMP #'\b'
     BEQ bsdel_case
     CMP #$7f
     BEQ bsdel_case
 
     ;; CR received?
-    CMP #$0d
+    CMP #'\r'
     BEQ cr_case
 
     ;; test for printable
-    CMP #$20                    ; space
+    CMP #' '                    ; space
     BCC receive_loop            ; < space
-    CMP #$7e                    ; ~
+    CMP #'~'                    ; ~
     BCS receive_loop            ; >= ~
     BRA printable_case
 
@@ -69,7 +70,7 @@ bsdel_case:
     JSR lcd_send_cmd
 
     ;; Write space
-    LDA #$20
+    LDA #' '
     JSR lcd_send_byte
 
     ;; Decrement address
@@ -116,7 +117,7 @@ write_loop:
     LDA #%11000000
     JSR lcd_send_cmd
     LDX #16                      ; start loop index at 16, decrement until 0
-    LDA #$20                     ; load a space char
+    LDA #' '                     ; load a space char
 
 clear_loop:
     JSR lcd_send_byte            ; write and increment address

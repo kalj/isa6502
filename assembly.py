@@ -214,7 +214,7 @@ class WordData:
 # Simple mathematical expression parser and evaluator
 #====================================================================
 
-calc_grammar = """
+calc_grammar = r"""
     ?start: sum
 
     ?sum: product
@@ -235,8 +235,10 @@ calc_grammar = """
          | "<" atom         -> lo_byte
          | "~" atom         -> inv
          | LABEL            -> label
+         | CHAR             -> char
          | "(" sum ")"
 
+    CHAR: /'([^\\]|\\.)'/
     LABEL: NAME | "@" NAME
     DIGIT: "0".."9"
     HEXDIGIT: "a".."f"|"A".."F"|DIGIT
@@ -266,16 +268,32 @@ class CalculateTree(Transformer):
             return int(v)
 
     def label(self, name):
-        try:
-            return self._labels[name.value]
-        except KeyError:
-            raise SyntaxError(f"label {name.value} not defined")
+        if self._labels is None:
+            return self
+        else:
+            try:
+                return self._labels[name.value]
+            except KeyError:
+                raise SyntaxError(f"label {name.value} not defined")
 
     def hi_byte(self, v):
         return (v >> 8) & 0xff
 
     def lo_byte(self, v):
         return v & 0xff
+
+    def char(self, c):
+        try:
+            unquoted = c[1:-1] # get rid of quotes
+            decoded = unquoted.encode().decode('unicode_escape') # unescape escape sequences, e.g. \n
+        except:
+            raise SyntaxError(f'Invalid char string literal: {c}')
+
+        if len(decoded) != 1:
+            raise SyntaxError(f'Invalid char string literal: {c}')
+
+        return ord(decoded)
+
 
 def parse_expression(expr):
     return parser.parse(expr)
@@ -288,17 +306,18 @@ def evaluate_expression(expr_tree, labels):
         raise e.orig_exc
 
 def expression_size(expr_tree):
-    try:
-        value = evaluate_expression(expr_tree, {})
-        if value > 255:
+
+    simplified = evaluate_expression(expr_tree, None)
+
+    if isinstance(simplified, int):
+        if simplified > 255:
             return 2
         else:
             return 1
-    except:
-        if expr_tree.data in ['lo_byte', 'hi_byte']:
-            return 1
-        else:
-            return 2
+    elif expr_tree.data in ['lo_byte', 'hi_byte']:
+        return 1
+    else:
+        return 2
 
 # ===================================================================
 # prune
