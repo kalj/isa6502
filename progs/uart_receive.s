@@ -7,7 +7,17 @@
 #define DPY_REG_CMD  $8200
 #define DPY_REG_DATA $8201
 
-.org $9000
+.org $b000
+
+nmi:
+    PHA
+    LDA #'Q'
+    JSR lcd_send_byte
+    PLA
+    RTI
+
+irq:
+    RTI
 
 reset:
     ;; Reset stack pointer
@@ -160,3 +170,8 @@ lcd_read_byte:
     JSR lcd_wait
     LDA DPY_REG_DATA            ; Read into accumulator from DATA register
     RTS                         ; Return
+
+.org $fffa
+.address nmi
+.address reset
+.address irq
