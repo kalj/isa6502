@@ -12,15 +12,15 @@ import io
 LOCAL_LABEL_PREFIX = '.'
 
 class SyntaxError(Exception):
-    def __init__(self,message, linum=None):
+    def __init__(self,message, context=None):
         super().__init__(message)
-        self._linum = linum
+        self._context = context
 
-    def set_linum(self,linum):
-        self._linum = linum
+    def set_context(self,context):
+        self._context = context
 
-    def get_linum(self):
-        return self._linum
+    def get_context(self):
+        return self._context
 
 def u8_to_s8(u8val):
     return (u8val+128)%256-128
@@ -101,10 +101,10 @@ def word_to_bytes(word):
     return [word & 0xff, (word >>8) & 0xff]
 
 class Instruction:
-    def __init__(self,opcode,operand, linum, current_nonlocal_label):
+    def __init__(self, opcode, operand, context, current_nonlocal_label):
         self._opcode = opcode
         self._address = None
-        self._linum = linum
+        self._context = context
 
         if isinstance(operand, Tree):
             for label_tok in operand.scan_values(lambda v: v.type == 'LABEL'):
@@ -150,7 +150,7 @@ class Instruction:
             try:
                 self._operand = evaluate_expression(self._operand, label_addresses)
             except SyntaxError as e:
-                e.set_linum(self._linum)
+                e.set_context(self._context)
                 raise e
 
         if self.get_addrmode() == "r":
@@ -162,7 +162,7 @@ class Instruction:
             branch_offset = self._operand - pc_address
 
             if branch_offset > 127 or branch_offset < -128:
-                raise SyntaxError("Out of range branch (branches are limited to -128 to +127)", self._linum)
+                raise SyntaxError("Out of range branch (branches are limited to -128 to +127)", self._context)
 
             branch_offset = (branch_offset+256) % 256 # convert to unsigned
 
@@ -328,9 +328,12 @@ def expression_size(expr_tree):
 # remove comments and empty lines
 # ===================================================================
 
-def prune(src_in):
+def read_and_prune(file_path):
+    with open(file_path,'r') as f:
+        src = f.readlines()
+
     src_out = []
-    for i,line in enumerate(src_in):
+    for i,line in enumerate(src):
         idx = line.find(";")
         if idx>=0:
             l = line[:idx]
@@ -341,7 +344,8 @@ def prune(src_in):
         if len(l) == 0:
             continue
 
-        src_out.append((l,i))
+        context = (i, file_path)
+        src_out.append((l, context))
     return src_out
 
 # ===================================================================
@@ -351,13 +355,12 @@ def prune(src_in):
 # ===================================================================
 
 class PreprocessorError(Exception):
-    def __init__(self,message, linum):
+    def __init__(self, message, context):
         super().__init__(message)
-        self._linum = linum
+        self._context = context
 
-    def get_linum(self):
-        return self._linum
-
+    def get_context(self):
+        return self._context
 
 def replace_variable_references(s, variables):
     for name in variables:
@@ -366,22 +369,34 @@ def replace_variable_references(s, variables):
 
     return s
 
-def preprocess(src_in):
-    variables = {}
+def preprocess(src_in, variables = None):
+    if variables is None:
+        variables = {}
     src_out = []
-    for line,linum in src_in:
+    for line,context in src_in:
 
         if m := re.match("^#define ([a-zA-Z_]\w*)\s+(.*)$",line):
             # variable definition
             name = m.group(1)
             if name in variables:
-                raise PreprocessorError(f"Redefinition of variable '{name}'", linum)
+                raise PreprocessorError(f"Redefinition of variable '{name}'", context)
 
             value = m.group(2)
             variables[name] = replace_variable_references(value, variables)
+        elif m := re.match(r'^#include\s+"(.*)"$', line):
+            include_fn = m.group(1)
+            fp = context[1] # file path
+            include_fp = fp.with_name(include_fn)
+            if not include_fp.exists():
+                raise PreprocessorError("Invalid include, can't find file {include_fp}", context)
+
+            included_src = read_and_prune(include_fp)
+            pp_included_src = preprocess(included_src, variables)
+            src_out.extend(pp_included_src)
+
         else:
             line = replace_variable_references(line, variables)
-            src_out.append((line,linum))
+            src_out.append((line,context))
 
     return src_out
 
@@ -453,14 +468,14 @@ def parse_argument(arg):
     return param_type,val
 
 
-def parse_instruction(source_line, linum, current_nonlocal_label):
+def parse_instruction(source_line, context, current_nonlocal_label):
     mnemonic = source_line.split()[0].upper()
     mnemonic_len = len(mnemonic)
     arg_fmt, param = parse_argument(source_line[mnemonic_len:].strip())
 
     opcode = identify_opcode(mnemonic,arg_fmt)
 
-    return Instruction(opcode, param, linum, current_nonlocal_label)
+    return Instruction(opcode, param, context, current_nonlocal_label)
 
 
 def parse_constant(s):
@@ -524,7 +539,7 @@ def parse_lines(source):
     src_out = []
     current_nonlocal_label = None
 
-    for line,linum in source:
+    for line,context in source:
 
         m = re.match(label_regex,line)
         if m:
@@ -532,12 +547,12 @@ def parse_lines(source):
 
             if re.match(re.escape(LOCAL_LABEL_PREFIX),lbl[0]):
                 if current_nonlocal_label is None:
-                    raise SyntaxError(f"Local label '{lbl}' with no preceeding non-local label", linum)
+                    raise SyntaxError(f"Local label '{lbl}' with no preceeding non-local label", context)
                 lbl = current_nonlocal_label+lbl
             else:
                 current_nonlocal_label = lbl
 
-            current_labels.append((lbl, linum))
+            current_labels.append((lbl, context))
             line = m.group(2).strip()
 
         if not line:
@@ -581,22 +596,22 @@ def parse_lines(source):
                 bytez = parse_string(line[7:].strip())
                 s = ByteData(bytez+b'\0') # append null byte
             else:
-                s = parse_instruction(line, linum, current_nonlocal_label)
+                s = parse_instruction(line, context, current_nonlocal_label)
 
         except SyntaxError as e:
-            e.set_linum(linum)
+            e.set_context(context)
             raise e
 
         if not s is None:
             statements.append(s)
 
             if current_labels:
-                for l,ln in current_labels:
+                for l,lcontext in current_labels:
                     if l in labels:
-                        label_linum=labels[l]['linum']
-                        raise SyntaxError(f"Duplicate label '{l}', first label at {label_linum}",ln)
+                        label_linum,fp = labels[l]['context']
+                        raise SyntaxError(f"Duplicate label '{l}', first label at {label_linum} in {fp}",lcontext)
 
-                    labels[l] = {'global_statement_idx':global_statement_count, 'linum':ln}
+                    labels[l] = {'global_statement_idx':global_statement_count, 'context':lcontext}
                 current_labels = []
 
             global_statement_count += 1
@@ -606,8 +621,8 @@ def parse_lines(source):
         sections.append({'base_address':base_address, 'statements':statements})
 
     if current_labels:
-        label_linum = source[-1][1]
-        raise SyntaxError("Label at end of file", label_linum)
+        label_context = source[-1][1]
+        raise SyntaxError("Label at end of file", label_context)
 
     # remove line numbers used for debugging
     labels = { k:v['global_statement_idx'] for k,v in labels.items() }
@@ -636,9 +651,9 @@ def resolve_labels(sections,labels):
     return sections
 
 
-def assemble(raw_source):
+def assemble(input_path):
     # prune
-    source_lines = prune(raw_source)
+    source_lines = read_and_prune(input_path)
 
     source_lines = preprocess(source_lines)
 

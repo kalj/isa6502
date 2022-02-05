@@ -89,19 +89,17 @@ if __name__ == '__main__':
     #------------------------------------------------------------
     # Read input
     #------------------------------------------------------------
-    with open(input_path,"r") as f:
-        raw_source = f.readlines()
-
     try:
-        sections = assemble(raw_source)
+        sections = assemble(input_path)
 
     except SyntaxError as e:
-        linum = e.get_linum()
-        if linum:
-            print(f"SyntaxError on line {linum}: {e}", file=sys.stderr)
-            print(raw_source[linum].rstrip(), file=sys.stderr)
-        else:
-            print(f"SyntaxError: {e}", file=sys.stderr)
+        linum,fpath = e.get_context()
+
+        with open(fpath,"r") as f:
+            raw_source = f.readlines()
+
+        print(f"SyntaxError at {fpath}:{linum}: {e}", file=sys.stderr)
+        print(raw_source[linum].rstrip(), file=sys.stderr)
         sys.exit(1)
 
     if args.verbose:
