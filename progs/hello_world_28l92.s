@@ -46,13 +46,13 @@ reset:
 
 ;; Start printing characters
     LDX #$00
-@print_loop:
+.print_loop:
     LDA hello_str,X
     CMP #$00
     BEQ the_end
     JSR duart_send_byte
     INX
-    BRA @print_loop
+    BRA .print_loop
 
 the_end:
 
@@ -69,10 +69,10 @@ the_end:
 #define DUART_STATUS_RXREADY  %00000001
 duart_send_byte:
     PHA
-@tx_not_ready:
+.tx_not_ready:
     LDA DUART_REG_SRA_CSRA      ; read status register
     BIT #DUART_STATUS_TXREADY
-    BEQ @tx_not_ready           ; eq/zero, i.e. NOT ready, then loop
+    BEQ .tx_not_ready           ; eq/zero, i.e. NOT ready, then loop
 
     PLA
     STA DUART_REG_FIFOA
@@ -81,7 +81,7 @@ duart_send_byte:
 sleep10ms:
     LDY #$ff
 
-@inner_loop:
+.inner_loop:
     NOP
     NOP
     NOP
@@ -100,7 +100,7 @@ sleep10ms:
     NOP
     NOP
     DEY
-    BNE @inner_loop
+    BNE .inner_loop
 
     DEX
     BNE sleep10ms

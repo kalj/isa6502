@@ -40,7 +40,7 @@ the_end:
 sleep10ms:
     LDY #$ff
 
-@inner_loop:
+.inner_loop:
     NOP
     NOP
     NOP
@@ -59,7 +59,7 @@ sleep10ms:
     NOP
     NOP
     DEY
-    BNE @inner_loop
+    BNE .inner_loop
 
     DEX
     BNE sleep10ms

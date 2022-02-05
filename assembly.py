@@ -9,6 +9,8 @@ from lark.exceptions import VisitError
 import intelhex
 import io
 
+LOCAL_LABEL_PREFIX = '.'
+
 class SyntaxError(Exception):
     def __init__(self,message, linum=None):
         super().__init__(message)
@@ -106,7 +108,7 @@ class Instruction:
 
         if isinstance(operand, Tree):
             for label_tok in operand.scan_values(lambda v: v.type == 'LABEL'):
-                if label_tok.value[0] == '@':
+                if re.match(re.escape(LOCAL_LABEL_PREFIX),label_tok.value[0]):
                     label_tok.value = current_nonlocal_label+label_tok.value
 
         self._operand = operand
@@ -214,7 +216,7 @@ class WordData:
 # Simple mathematical expression parser and evaluator
 #====================================================================
 
-calc_grammar = r"""
+calc_grammar = r'''
     ?start: sum
 
     ?sum: product
@@ -239,7 +241,7 @@ calc_grammar = r"""
          | "(" sum ")"
 
     CHAR: /'([^\\]|\\.)'/
-    LABEL: NAME | "@" NAME
+    LABEL: NAME | "''' +LOCAL_LABEL_PREFIX + r'''" NAME
     DIGIT: "0".."9"
     HEXDIGIT: "a".."f"|"A".."F"|DIGIT
     BINDIGIT: "0".."1"
@@ -249,7 +251,8 @@ calc_grammar = r"""
     %import common.WS_INLINE
 
     %ignore WS_INLINE
-"""
+'''
+
 parser  = Lark(calc_grammar, parser='lalr')
 
 @v_args(inline=True)    # Affects the signatures of the methods
@@ -387,8 +390,6 @@ def preprocess(src_in):
 # Parse statements (instructions and data directives)
 # ===================================================================
 
-local_label_prefix='@'
-
 def parse_parameter(param):
 
     tree = parse_expression(param)
@@ -516,7 +517,7 @@ def parse_lines(source):
     statements = []
     base_address = 0;
 
-    label_regex='^('+local_label_prefix+'?[a-zA-Z_]\w*):(.*)$'
+    label_regex='^('+re.escape(LOCAL_LABEL_PREFIX)+'?[a-zA-Z_]\w*):(.*)$'
 
     labels={}
     current_labels = []
@@ -529,7 +530,7 @@ def parse_lines(source):
         if m:
             lbl = m.group(1)
 
-            if lbl[0] == local_label_prefix:
+            if re.match(re.escape(LOCAL_LABEL_PREFIX),lbl[0]):
                 if current_nonlocal_label is None:
                     raise SyntaxError(f"Local label '{lbl}' with no preceeding non-local label", linum)
                 lbl = current_nonlocal_label+lbl

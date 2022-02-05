@@ -38,13 +38,13 @@ acia_wait:
     PHY
     PHX
     LDY #1
-@minidly:
+.minidly:
     LDX #$68
-@delay_1:
+.delay_1:
     DEX
-    BNE @delay_1
+    BNE .delay_1
     DEY
-    BNE @minidly
+    BNE .minidly
     PLX
     PLY
     RTS
@@ -56,7 +56,7 @@ acia_send_byte:
 
 sleep10ms:
     LDY #$ff
-@do_nops:
+.do_nops:
     NOP
     NOP
     NOP
@@ -75,7 +75,7 @@ sleep10ms:
     NOP
     NOP
     DEY
-    BNE @do_nops
+    BNE .do_nops
 
     DEX
     BNE sleep10ms
