@@ -1,13 +1,7 @@
-#define UART_REG_STATUS $8400
-#define UART_REG_RXDATA $8401
-#define UART_REG_TXDATA $8402
-#define UART_STATUS_TXFULL  %00000001
-#define UART_STATUS_RXEMPTY %00000010
 
-#define DPY_REG_CMD  $8200
-#define DPY_REG_DATA $8201
-
-.org $b000
+.org $9000
+#include "uart.s"
+#include "lcd.s"
 
 nmi:
     PHA
@@ -24,26 +18,7 @@ reset:
     LDX #$ff
     TXS
 
-    LDA #%00111000              ; Set 8-bit/2-line mode
-    JSR lcd_send_cmd
-
-    LDA #%00010000              ; Set cursor shift
-    JSR lcd_send_cmd
-
-    LDA #%00001100              ; Set display ON
-    JSR lcd_send_cmd
-
-    LDA #%00000110              ; Set entry mode
-    JSR lcd_send_cmd
-
-    LDA #%00000001              ; Clear screen
-    JSR lcd_send_cmd
-
-    LDA #%00000010              ; Return home
-    JSR lcd_send_cmd
-
-    LDA #%00000001              ; Clear screen
-    JSR lcd_send_cmd
+    JSR lcd_init
 
 receive_loop:
     LDA UART_REG_STATUS
@@ -71,7 +46,7 @@ receive_loop:
 
 bsdel_case:
     ;; determine if on beginning of line
-    LDA DPY_REG_CMD             ; Load CMD register
+    LDA LCD_REG_CMD             ; Load CMD register
     BIT #%00111111
     BEQ receive_loop            ; beginning of line -> done
 
@@ -91,7 +66,7 @@ bsdel_case:
 
 cr_case:
     ;; Determine if first line or not
-    LDA DPY_REG_CMD             ; Load CMD register
+    LDA LCD_REG_CMD             ; Load CMD register
     AND #%01000000
     BEQ not_on_line2
 
@@ -148,28 +123,6 @@ printable_case:
 
     STP
     NOP
-
-;; Subroutines
-
-lcd_wait:
-    LDY DPY_REG_CMD             ; Load CMD register
-    BMI lcd_wait
-    RTS
-
-lcd_send_cmd:
-    JSR lcd_wait
-    STA DPY_REG_CMD             ; Write accumulator to CMD register
-    RTS                         ; Return
-
-lcd_send_byte:
-    JSR lcd_wait
-    STA DPY_REG_DATA            ; Write accumulator to DATA register
-    RTS                         ; Return
-
-lcd_read_byte:
-    JSR lcd_wait
-    LDA DPY_REG_DATA            ; Read into accumulator from DATA register
-    RTS                         ; Return
 
 .org $fffa
 .address nmi

@@ -1,0 +1,16 @@
+#define UART_REG_STATUS $8400
+#define UART_REG_RXDATA $8401
+#define UART_REG_TXDATA $8402
+#define UART_STATUS_TXFULL  %00000001
+#define UART_STATUS_RXEMPTY %00000010
+
+uart_send_byte:
+    PHA
+.tx_full:
+    LDA UART_REG_STATUS
+    AND #UART_STATUS_TXFULL
+    BNE .tx_full
+
+    PLA
+    STA UART_REG_TXDATA
+    RTS

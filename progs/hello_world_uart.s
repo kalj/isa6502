@@ -1,10 +1,7 @@
-#define UART_REG_STATUS $8400
-#define UART_REG_RXDATA $8401
-#define UART_REG_TXDATA $8402
-#define UART_STATUS_TXFULL  %00000001
-#define UART_STATUS_RXEMPTY %00000010
-
 .org $9000
+#include "uart.s"
+#include "sleep.s"
+
 reset:
     ;; Reset stack pointer
     LDX #$ff
@@ -28,46 +25,10 @@ the_end:
     STP
     NOP
 
-;; Subroutines
-
-uart_send_byte:
-    PHA
-tx_full:
-    LDA UART_REG_STATUS
-    AND #UART_STATUS_TXFULL
-    BNE tx_full
-
-    PLA
-    STA UART_REG_TXDATA
-    RTS
-
-sleep10ms:
-    LDY #$ff
-
-sleep10ms_2:
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    DEY
-    BNE sleep10ms_2
-
-    DEX
-    BNE sleep10ms
-    RTS
-
 hello_str:
     .asciiz "Hello World!\n"
+
+.org $fffa
+.address reset                  ; nmi
+.address reset
+.address reset                  ; irq
